@@ -1,0 +1,61 @@
+# Local environment files. Keep only the reviewed fake template.
+.env*
+!.env.example
+
+# Private runtime secrets and key material.
+secrets/
+*.key
+*.pem
+*.p12
+*.pfx
+*.crt
+*.cer
+*.der
+*.token
+*.secret
+*.credentials
+
+# Database dumps, backups, archives and local databases.
+*.dump
+*.sql
+*.sql.gz
+*.bak
+*.backup
+*.sqlite
+*.sqlite3
+*.db
+*.db-*
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+*.7z
+*.rar
+
+# Real or generated data exports.
+data/
+datasets/
+uploads/
+exports/
+*.csv
+*.parquet
+*.feather
+*.arrow
+*.orc
+*.xlsx
+*.xls
+
+# Local/private agent state and build/test caches.
+.opencode/
+.omnirush/
+__pycache__/
+.venv/
+*.pyc
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.import_linter_cache/
+*.log
+*.tmp
+*.swp
+*~

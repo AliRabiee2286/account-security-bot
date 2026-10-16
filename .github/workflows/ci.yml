@@ -1,0 +1,40 @@
+name: ci
+on: [pull_request, push]
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: postgresql+asyncpg://sentinel_app:sentinel_app_ci@localhost:5432/sentinel
+      MIGRATION_DATABASE_URL: postgresql+asyncpg://sentinel_admin:sentinel_admin_ci@localhost:5432/sentinel
+      REDIS_URL: redis://:redis_ci_password@localhost:6379/0
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: sentinel_admin
+          POSTGRES_PASSWORD: sentinel_admin_ci
+          POSTGRES_DB: sentinel
+        ports: ["5432:5432"]
+      redis:
+        image: redis:7-alpine
+        command: ["redis-server", "--requirepass", "redis_ci_password"]
+        ports: ["6379:6379"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+      - run: uv sync --frozen
+      - name: Create runtime database role
+        env:
+          PGPASSWORD: sentinel_admin_ci
+        run: >-
+          psql --host localhost --port 5432 --username sentinel_admin --dbname sentinel
+          --command "CREATE ROLE sentinel_app LOGIN PASSWORD 'sentinel_app_ci';"
+      - run: uv run ruff check . && uv run ruff format --check .
+      - run: uv run mypy app
+      - run: uv run lint-imports            # D-009 module boundaries
+      - run: uv run pytest -q
+      - name: Run migrations
+        env:
+          DATABASE_URL: postgresql+asyncpg://sentinel_app:sentinel_app_ci@localhost:5432/sentinel
+          MIGRATION_DATABASE_URL: postgresql+asyncpg://sentinel_admin:sentinel_admin_ci@localhost:5432/sentinel
+        run: uv run alembic upgrade head

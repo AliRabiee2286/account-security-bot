@@ -1,0 +1,68 @@
+# Local development compose. Production staging must replace dev networking/secrets and pin images.
+services:
+  api:
+    build: .
+    env_file: .env
+    depends_on:
+      db: {condition: service_healthy}
+      redis: {condition: service_healthy}
+    ports: ["127.0.0.1:8000:8000"]
+    read_only: true
+    tmpfs: [/tmp]
+    secrets: [master_key]
+  worker:
+    build: .
+    env_file: .env
+    command: ["arq", "app.entrypoints.workers.settings.WorkerSettings"]
+    depends_on:
+      db: {condition: service_healthy}
+      redis: {condition: service_healthy}
+    read_only: true
+    tmpfs: [/tmp]
+    secrets: [master_key]
+  migrate:
+    build: .
+    env_file: .env
+    command: ["alembic", "upgrade", "head"]
+    depends_on:
+      db: {condition: service_healthy}
+    profiles: ["tools"]
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: sentinel_admin
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: sentinel
+      SENTINEL_APP_PASSWORD: ${SENTINEL_APP_PASSWORD:?set SENTINEL_APP_PASSWORD in .env}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./docker/postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sentinel_admin -d sentinel"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+  redis:
+    image: redis:7-alpine
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?set REDIS_PASSWORD in .env}
+    command:
+      - sh
+      - -c
+      - >-
+        exec redis-server --appendonly yes --protected-mode yes
+        --requirepass "$$REDIS_PASSWORD"
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          redis-cli -a "$$REDIS_PASSWORD" ping | grep -q PONG
+      interval: 5s
+      timeout: 3s
+      retries: 10
+volumes:
+  pgdata: {}
+secrets:
+  master_key:
+    file: ./secrets/master_key

@@ -1,0 +1,92 @@
+[project]
+name = "sentinel"
+version = "0.1.0"
+description = "Telegram bot for company account security and leak response"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+  "aiogram>=3.13,<4",
+  "fastapi>=0.115,<1",
+  "python-multipart>=0.0.9",
+  "uvicorn[standard]>=0.30",
+  "pydantic>=2.8,<3",
+  "pydantic-settings>=2.4,<3",
+  "sqlalchemy[asyncio]>=2.0.32,<2.1",
+  "asyncpg>=0.29",
+  "alembic>=1.13",
+  "redis>=5.0",
+  "arq>=0.26",
+  "structlog>=24.4",
+  "cryptography>=43",
+  "httpx>=0.27",
+  "sqladmin>=0.19",
+  "sentry-sdk>=2.13",
+]
+
+[dependency-groups]
+dev = ["pytest>=8", "pytest-asyncio>=0.24", "ruff>=0.6", "mypy>=1.11", "import-linter>=2.1", "pre-commit>=3.8"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "S", "ASYNC", "RUF", "SIM", "PL"]
+ignore = ["PLR0913"]
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101", "PLR2004"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+plugins = ["pydantic.mypy"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+# D-009: module boundaries are enforced in CI, not by memory.
+[tool.importlinter]
+root_package = "app"
+
+[[tool.importlinter.contracts]]
+name = "Layers: entrypoints -> modules -> adapters -> core"
+type = "layers"
+layers = ["app.entrypoints", "app.modules", "app.adapters", "app.core"]
+
+[[tool.importlinter.contracts]]
+name = "Mailbox module uses only public identity and audit APIs"
+type = "forbidden"
+source_modules = ["app.modules.mailboxes"]
+forbidden_modules = ["app.modules.identity.repository", "app.modules.identity.models", "app.modules.audit.repository", "app.modules.audit.models"]
+allow_indirect_imports = true
+
+[[tool.importlinter.contracts]]
+name = "Social module uses only public identity, mailbox, and audit APIs"
+type = "forbidden"
+source_modules = ["app.modules.social"]
+forbidden_modules = ["app.modules.identity.repository", "app.modules.identity.models", "app.modules.mailboxes.repository", "app.modules.mailboxes.models", "app.modules.audit.repository", "app.modules.audit.models"]
+allow_indirect_imports = true
+
+[[tool.importlinter.contracts]]
+name = "Incident module uses only public social and audit APIs"
+type = "forbidden"
+source_modules = ["app.modules.incidents"]
+forbidden_modules = ["app.modules.social.repository", "app.modules.social.models", "app.modules.identity.repository", "app.modules.identity.models", "app.modules.audit.repository", "app.modules.audit.models"]
+allow_indirect_imports = true
+
+[[tool.importlinter.contracts]]
+name = "Entrypoints never touch repositories or models directly"
+type = "forbidden"
+source_modules = ["app.entrypoints.bot", "app.entrypoints.api", "app.entrypoints.workers"]
+forbidden_modules = [
+  "app.modules.identity.repository",
+  "app.modules.identity.models",
+  "app.modules.audit.repository",
+  "app.modules.audit.models",
+  "app.modules.mailboxes.repository",
+  "app.modules.mailboxes.models",
+  "app.modules.social.repository",
+  "app.modules.social.models",
+  "app.modules.incidents.repository",
+  "app.modules.incidents.models",
+]
+allow_indirect_imports = true
