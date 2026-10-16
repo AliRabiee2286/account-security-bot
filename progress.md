@@ -67,3 +67,17 @@
   پروژه آماده است.
 - `docs/NEXT_SESSION.md` با STEP-000 و شرط synthetic-only/no-real-secret برای STG-001
   به‌روز شد. اجرای STG-001 عمداً انجام نشد.
+
+## 2026-10-16 — ثبت failure واقعی CI و آماده‌سازی مکتوب STG-001
+- وضعیت Git به‌صورت read-only بررسی شد: `main` روی commit `c9bf590` با
+  `origin/main` همگام است؛ push جدیدی از این جلسه انجام نشد.
+- علت اعلام‌شدهٔ GitHub ثبت شد: `.github/workflows/ci.yml:20` از
+  `services.redis.command` استفاده می‌کند، GitHub workflow را parse نکرد و هیچ jobی اجرا
+  نشد. این مورد در `docs/STATUS.md` از نظر CI syntax به `PARTIAL` ثبت شد.
+- نمونهٔ `offline/static PASS` در برابر `GitHub runtime/schema FAIL` در
+  `docs/DECISIONS.md` ثبت شد؛ Phase 1 همچنان `BLOCKED` است.
+- `docs/NEXT_SESSION.md` با plan مکتوب STG-001 هماهنگ شد: اصلاح Redis در اولویت،
+  `permissions: contents: read`، health check، secretهای تصادفی job-only، migration قبل از
+  integration، `RUN_INTEGRATION=1`، race/reclaim، restore، actionlint محلی و مسیر PR.
+- `task_plan.md` بدهی `SEC-001` برای production guard را با اولویت P1 و وابستگی‌ها ثبت کرد؛
+  هیچ کد، workflow یا migration در این جلسه تغییر نکرد و STG-001 اجرا نشد.

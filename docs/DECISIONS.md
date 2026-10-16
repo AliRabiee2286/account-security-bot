@@ -166,6 +166,42 @@ automation، MTProto user session و آزمون رمز افراد خارج از 
    STG-001 را اجرا نمی‌کند: `RUN_INTEGRATION=1`، race دو worker، webhook smoke و
    backup/restore در آن gate نیستند.
 
+## رخداد CI پس از push baseline و تصمیم اصلاحی
+
+پس از push baseline، GitHub فایل `.github/workflows/ci.yml` را با این خطا رد کرد:
+
+```text
+Invalid workflow file (Line: 20, Col: 18): A sequence was not expected.
+```
+
+شاهد موجود: line 20 کلید `services.redis.command` را به‌صورت sequence دارد. در schema
+فعلی GitHub Actions، service container این کلید را در آن جایگاه قبول نمی‌کند؛ بنابراین
+هیچ job اجرا نشد. این یک **runtime/platform failure بعد از push** است، نه evidence موفقیت
+CI. وضعیت canonical این مورد `PARTIAL` است و در `docs/STATUS.md` ثبت شده است.
+
+این رخداد نمونهٔ صریح تفاوت زیر است:
+
+| سطح | نتیجه | معنی |
+|---|---|---|
+| offline/static | `PASS` قبلی | YAML/parser محلی و بررسی‌های استاتیک در workspace خطای ثبت‌شده نداشتند. |
+| GitHub workflow load | `FAIL` | GitHub schema واقعی workflow را رد کرد و حتی یک job شروع نشد. |
+| Phase 1 runtime gate | `BLOCKED` | تا اصلاح و اجرای واقعی، migration/integration/evidence قابل ادعا نیست. |
+
+تصمیم اجرایی برای STG-001 این است که اولین تغییر، رفع schema Redis باشد؛ سپس
+`permissions: contents: read`، health checkهای PostgreSQL/Redis، migration پیش از
+integration، `RUN_INTEGRATION=1`، race/reclaim، restore و cleanup اضافه و با actionlint
+قبل از push بررسی شوند. طرح کامل و خروجی مورد انتظار هر gate فقط در
+`docs/NEXT_SESSION.md` نگهداری می‌شود تا تکرار تصمیم در چند فایل ایجاد نشود.
+
+دو مسیر Redis در plan مجازند:
+
+1. مسیر ترجیحی: حذف `services.redis.command` و راه‌اندازی Redis 7 در step صریح Docker با
+   password تصادفی و موقت همان job، سپس health check `PONG`؛ یا
+2. fallback محدود: service Redis بدون password فقط روی runner ایزولهٔ CI، با ثبت صریح
+   این استثنا. این fallback برای staging/production مجاز نیست.
+
+هیچ‌کدام از این اصلاحات در این جلسه اعمال نشده‌اند و هیچ workflow یا scriptی تغییر نکرده است.
+
 ## تصمیم‌هایی که فقط صاحب پروژه می‌تواند بگیرد
 
 - تأیید داشتن حساب Developer X، هزینه/credit، سقف مصرف و دسترسی API برای حساب آزمایشی.

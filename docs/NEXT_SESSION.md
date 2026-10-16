@@ -1,8 +1,8 @@
-# دستور جلسه بعد — STEP-000 پیش‌نیاز STG-001
+# دستور جلسه بعد — STG-001 پس از تکمیل STEP-000
 
-**اولین کار جلسه بعد:** تکمیل `STEP-000 — پاکیزگی workspace، ممیزی نام فایل‌های حساس،
-آماده‌سازی Git روی main و بازبینی فهرست commit`. تا پایان این قدم و تأیید صریح صاحب پروژه،
-`STG-001` اجرا نمی‌شود.
+**اولین کار جلسه بعد:** اجرای برنامهٔ `STG-001 — اصلاح و اجرای gate CI روی شاخهٔ جدا،
+با Pull Request و ثبت evidence فاز ۱`. `STEP-000` انجام شده و baseline commit روی
+`main` در `origin/main` قرار دارد؛ تا تأیید صریح صاحب پروژه، STG-001 اجرا نمی‌شود.
 
 این سند برای اپراتوری نوشته شده که تجربهٔ کمی دارد. در این جلسه فقط سند نوشته شده و
 هیچ‌یک از مراحل زیر اجرا نشده است.
@@ -16,9 +16,11 @@
 3. `docs/STAGING_RUNBOOK.md` — پیش‌شرط، gate، evidence، abort و rollback.
 4. `evidence/PHASE1_EVIDENCE_TEMPLATE.md` — جدول ثبت نتیجه، شواهد و reviewerها.
 5. `tests/integration/README.md` — رفتارهایی که integration واقعی باید ثابت کند.
-6. `.github/workflows/ci.yml` — workflow فعلی؛ آن را با STG-001 یکی فرض نکنید.
-7. `task_plan.md` — فقط ترتیب بسته‌های roadmap.
-8. آخرین entry در `progress.md` و جلسه ۳۶ در Second Brain — تاریخچهٔ این baseline.
+6. `.github/workflows/ci.yml` — workflow فعلی و خطای schema ثبت‌شده؛ آن را با طرح اصلاحی
+   STG-001 یکی فرض نکنید.
+7. `scripts/staging_gate.sh` — ترتیب فعلی gate و تفاوت آن با طرح جدید.
+8. `task_plan.md` — ترتیب بسته‌های roadmap و بدهی production guard.
+9. آخرین entry در `progress.md` و جلسه ۳۶ در Second Brain — تاریخچهٔ این baseline.
 
 ## مرز ایمنی
 
@@ -33,10 +35,11 @@
 - هر چیزی که برای گزارش خطا می‌فرستید باید secretها، tokenها، URLهای دارای credential و
   payloadهای حساس را حذف یا mask کرده باشد.
 
-## STEP-000 — پیش‌نیاز قبل از STG-001
+## STEP-000 — completed archive
 
-این قدم فقط repository hygiene و آماده‌سازی کنترل‌شدهٔ Git است. هیچ سرویس، migration،
-provider، WebAuthn یا feature جدیدی اجرا نمی‌شود.
+این قدم تکمیل شده است: workspace hygiene، ممیزی نام فایل‌ها، `.gitignore`، Git روی
+`main`، baseline commit و push اولیه انجام شده‌اند. بخش‌های زیر فقط شرح تاریخی و قابل
+بازبینی‌اند؛ آن‌ها را تکرار نکنید و به‌عنوان قدم رسمی بعدی استفاده نکنید.
 
 ### ۰.۱ — فهرست فایل‌های تغییرکرده
 
@@ -175,6 +178,318 @@ STEP-000 فقط وقتی آمادهٔ بازبینی است که `.gitignore` ب
 شده، workspace روی `main` است، فهرست candidateها دقیقاً ارائه شده، صاحب پروژه آن را تأیید
 کرده، و اگر commit/push انجام شده باشد هیچ secret یا archiveٔ مشکوکی در آن نیست. بعد از آن
 برای اجرای STG-001 باید تأیید جداگانهٔ صاحب پروژه گرفته شود.
+
+## برنامهٔ مکتوب STG-001 — تغییرات هنوز اجرا نشده‌اند
+
+این بخش specification اجرایی است، نه اجرای تغییر. در STG-001 بعدی، تغییرات فقط روی شاخهٔ
+`stg-001-ci-gate` انجام می‌شوند و از طریق Pull Request بازبینی خواهند شد. در این جلسه
+هیچ‌کدام از فایل‌های workflow یا script تغییر نکرده‌اند.
+
+### اولین اصلاح اجباری: خطای schema در Redis
+
+GitHub بعد از push فایل `.github/workflows/ci.yml` را با خطای زیر رد کرد:
+
+```text
+Invalid workflow file (Line: 20, Col: 18): A sequence was not expected.
+```
+
+شاهد source-level این است که `services.redis.command` در line 20 به‌صورت sequence آمده
+است؛ GitHub Actions در تعریف service container این کلید را در این جایگاه پشتیبانی نمی‌کند.
+در نتیجه هیچ job اجرا نشد. این باید **اولین تغییر STG-001** باشد، قبل از هر ادعای CI runtime.
+
+طرح ترجیحی برای اصلاح:
+
+1. از `services.redis.command` حذف شود؛ همان ساختار فعلی هرگز دوباره با فرض پشتیبانی از
+   `command` در service container نوشته نشود.
+2. Redis در یک step صریح با Docker اجرا شود تا password و command واقعی قابل‌کنترل باشند.
+   آن step باید container disposable بسازد، port داخلی runner را bind کند و password را
+   از مقدار تصادفی همان job بگیرد.
+3. اگر تیم تصمیم بگیرد Redis service بدون password کافی است، این فقط برای runner ایزولهٔ
+   CI و با ثبت تصمیم مجاز است؛ `docker-compose.yml` و staging/production همچنان password
+   لازم دارند. این fallback نباید به محیط واقعی تعمیم داده شود.
+4. در هر دو حالت باید health check صریح وجود داشته باشد و `P1-REDIS` بدون خروجی health
+   معتبر PASS نشود.
+
+### برنامهٔ دقیق تغییرات آینده در `.github/workflows/ci.yml`
+
+این فهرست فقط plan است؛ در این جلسه `.github/workflows/ci.yml` تغییر نمی‌کند:
+
+1. در سطح workflow اضافه شود:
+
+   ```yaml
+   permissions:
+     contents: read
+   ```
+
+2. `services.redis.command` حذف شود. مسیر ترجیحی این است که تعریف Redis از service
+   container خارج و به step `Start disposable Redis` منتقل شود؛ آن step با Docker و یک
+   password تصادفی job-only Redis 7 را اجرا می‌کند، مقدار را در GitHub Actions mask می‌کند
+   و فقط `REDIS_URL` را از طریق `$GITHUB_ENV` برای همان job تنظیم می‌کند.
+3. برای PostgreSQL 16 نیز یکی از دو روش صریح انتخاب شود:
+   - حفظ service container و افزودن `options` برای `pg_isready`؛ یا
+   - اجرای container با Docker در step مشترک خدمات، تا password admin و password runtime
+     هر دو تصادفی و فقط برای همان job باشند.
+4. روش انتخاب‌شده باید health check قابل مشاهده داشته باشد:
+   - PostgreSQL: `pg_isready -U sentinel_admin -d sentinel` تا خروجی ready؛
+   - Redis: `redis-cli ... ping` تا خروجی `PONG`.
+5. `Create runtime database role` باید password runtime را از environment موقت job بگیرد؛
+   مقدار CI فعلی نباید به‌عنوان credential ثابت در workflow باقی بماند.
+6. ترتیب stepها باید صریحاً چنین باشد:
+   - checkout؛
+   - setup uv؛
+   - ساخت secretهای تصادفی و start serviceها؛
+   - health check PostgreSQL و Redis؛
+   - `uv sync --frozen`؛
+   - Ruff، format، mypy، import-linter و unit tests؛
+   - ساخت/بررسی role runtime؛
+   - migration از DB خالی؛
+   - integration tests با `RUN_INTEGRATION=1`؛
+   - تست‌های race، دو worker و restore؛
+   - جمع‌آوری evidence و cleanup در step `if: always()`.
+7. migration باید قبل از integration test اجرا شود؛ integration نباید صرفاً به DB service
+   خام یا schema ناقص وصل شود.
+8. هر artifact خروجی باید sanitized باشد و secret، DSN دارای password، token یا payload
+   واقعی را چاپ نکند.
+
+### برنامهٔ دقیق تغییرات آینده در `scripts/staging_gate.sh`
+
+این فهرست نیز فقط plan است؛ script فعلی تغییر نکرده است:
+
+1. الزام‌های `DATABASE_URL`، `MIGRATION_DATABASE_URL` و `REDIS_URL` حفظ شوند.
+2. `TELEGRAM_BOT_TOKEN` و `TELEGRAM_WEBHOOK_SECRET` برای synthetic gate به‌صورت اجباری
+   global باقی نمانند؛ فقط اگر `RUN_WEBHOOK_SMOKE=1` باشد لازم شوند. نبود حساب/توکن واقعی
+   Telegram باید `P1-WEBHOOK=BLOCKED` ثبت کند، نه اینکه با مقدار جعلی ادعای PASS بسازد.
+3. ترتیب فعلی به ترتیب صریح زیر تبدیل شود:
+
+   ```text
+   frozen install
+   static quality checks
+   unit tests
+   empty-database migration
+   runtime role-separation probe
+   RUN_INTEGRATION=1 integration tests
+   concurrent form consume
+   two-worker outbox claim/reclaim
+   restore drill, when disposable backup tooling exists
+   ```
+
+4. script باید برای هر gate یک نتیجهٔ `PASS`، `BLOCKED` یا `NOT RUN` چاپ و در exit code
+   نهایی، فقط شکست واقعی gateهای قابل‌اجرا را fail کند؛ gate blocked نباید به PASS تبدیل
+   شود.
+5. migration باید پیش از `RUN_INTEGRATION=1` اجرا شود و head مورد انتظار `0007` ثبت شود.
+6. `P1-REDIS` فقط با health check و اجرای واقعی دو worker قابل PASS است؛ وجود primitive یا
+   service container به‌تنهایی کافی نیست.
+7. `P1-RESTORE` فقط با backup synthetic، checksum، restore در DB جدا و row count ثبت‌شده
+   قابل PASS است. اگر ابزار backup در runner فراهم نباشد، `BLOCKED` بماند.
+8. cleanup باید در CI حتی بعد از failure اجرا شود و container، volume و فایل secret موقت
+   را حذف کند؛ secret در artifact یا log باقی نماند.
+
+### ساخت secretهای تصادفی و موقت در CI
+
+هیچ secret واقعی از صاحب پروژه یا provider درخواست نمی‌شود. در job disposable، پس از شروع
+runner و قبل از ایجاد serviceها، یک step با `python` یا `openssl` می‌تواند رشته‌های تصادفی
+URL-safe تولید کند:
+
+```text
+POSTGRES_ADMIN_PASSWORD = random URL-safe value, job-only
+SENTINEL_APP_PASSWORD   = random URL-safe value, job-only
+REDIS_PASSWORD          = random URL-safe value, job-only
+```
+
+این مقادیر باید فقط در حافظهٔ job/`$GITHUB_ENV` موقت باشند، با `::add-mask::` mask شوند،
+در command output چاپ نشوند و در artifact، commit، issue یا workspace ذخیره نشوند. اگر
+محدودیت service container اجازهٔ تزریق چنین مقدارهایی را ندهد، اجرای serviceها با Docker
+در step صریح انجام می‌شود؛ استفاده از password ثابت CI فقط fallback مستند و محدود به runner
+ایزوله است، نه راه‌حل staging/production.
+
+### بررسی‌ها، خروجی موفق و محدودیت واقعی
+
+| بررسی | روش برنامه‌ریزی‌شده | خروجی موفق | اگر واقعاً قابل‌اجرا نباشد |
+|---|---|---|---|
+| Workflow syntax | `actionlint` محلی قبل از push و parser GitHub در PR | exit code صفر و workflow قابل load؛ سپس job واقعاً شروع می‌شود | `BLOCKED`؛ push بدون actionlint مجاز نیست. |
+| PostgreSQL health | `pg_isready` یا Docker health status | خروجی ready و service healthy | `BLOCKED`؛ migration اجرا نمی‌شود. |
+| Redis health | `redis-cli ping` با password موقت یا fallback بدون password ثبت‌شده | `PONG` و اتصال با `REDIS_URL` همان job | `BLOCKED`؛ P1-REDIS PASS نیست. |
+| Empty DB migration | `uv run alembic upgrade head` روی DB تازه | exit code صفر و revision `0007` | `BLOCKED`; هیچ integration موفق اعلام نمی‌شود. |
+| Role separation | migration با admin، app probe با runtime role و رد عملیات ممنوع | admin upgrade می‌کند؛ runtime کار مجاز را انجام می‌دهد و mutation ممنوع رد می‌شود | `BLOCKED`؛ static scan جای runtime probe نیست. |
+| Offline quality | lock، Ruff، format، mypy، import-linter و unit tests | خروجی صفر خطا؛ تعداد تست‌ها ثبت می‌شود | `BLOCKED` یا fail واقعی همان step. |
+| Integration | `RUN_INTEGRATION=1 uv run pytest -q tests/integration` بعد از migration | testها واقعاً اجرا شوند و skip پنهان نماند | `BLOCKED` اگر fixture/test/service وجود نداشته باشد. |
+| Form race | دو consume هم‌زمان روی token synthetic | دقیقاً یک winner | `BLOCKED` اگر test end-to-end هنوز وجود نداشته باشد. |
+| Outbox two-worker | دو worker روی event synthetic + stuck reclaim | یک claim/execute، بدون duplicate، reclaim قابل‌مشاهده | `BLOCKED` چون registry فعلی خالی است یا test وجود ندارد. |
+| Restore | backup synthetic، checksum، restore در DB جدا و row count | checksum/مدت/row count قابل‌بازبینی | `BLOCKED` اگر ابزار backup یا evidence کامل نباشد. |
+| Telegram webhook | فقط با test bot و secret غیرواقعیِ test-only | invalid status و valid status طبق قرارداد | اگر اتصال واقعی/حساب test در اختیار نباشد، `BLOCKED`؛ هرگز با token جعلی PASS نشود. |
+| Provider/X | خارج از STG-001 | اجرا نمی‌شود | `BLOCKED/NOT RUN`؛ provider و حساب واقعی خارج از این gate هستند. |
+
+### اعتبارسنجی workflow قبل از push
+
+قبل از push شاخهٔ STG-001، روی سیستم توسعه actionlint اجرا شود:
+
+```bash
+actionlint .github/workflows/ci.yml
+```
+
+خروجی موفق: بدون diagnostic و exit code صفر. اگر actionlint روی سیستم نصب نیست، نصب آن
+باید از منبع رسمی انجام شود یا بررسی در یک container/CI جدا اجرا شود؛ نبود ابزار نباید با
+عبور بی‌بررسی جایگزین شود. پس از آن PR باز می‌شود و GitHub هم باید workflow را parse کند.
+
+### نصب و اجرای actionlint روی Windows
+
+منبع رسمی ابزار و releaseها:
+
+- https://github.com/rhysd/actionlint
+- https://github.com/rhysd/actionlint/releases/latest
+
+روش ساده بدون Go:
+
+1. در صفحهٔ release رسمی، archive مناسب Windows را مطابق معماری سیستم دانلود کنید؛ برای
+   Windows 64-bit معمولاً archive با نام `windows_x86_64` است.
+2. archive را مثلاً در `%USERPROFILE%\bin\actionlint` استخراج کنید.
+3. در یک PowerShell تازه، مسیر را فقط برای همان session اضافه کنید:
+
+   ```powershell
+   $env:Path += ";$env:USERPROFILE\bin\actionlint"
+   ```
+
+4. نصب را بررسی کنید:
+
+   ```powershell
+   actionlint -version
+   ```
+
+5. در ریشهٔ repository اجرا کنید:
+
+   ```powershell
+   actionlint .github/workflows/ci.yml
+   ```
+
+خروجی موفق: هیچ diagnostic و exit code صفر. اگر Go از قبل نصب است، راه رسمی جایگزین
+`go install github.com/rhysd/actionlint/cmd/actionlint@latest` است؛ سپس `%USERPROFILE%\go\bin`
+را به PATH همان session اضافه و `actionlint -version` را بررسی کنید. اگر دانلود، نصب یا
+اجرای actionlint روی Windows ممکن نشد، آن را صریحاً `BLOCKED` ثبت کنید و قبل از push از
+GitHub Actions یا container رسمی/قابل‌اعتماد برای همان validation استفاده کنید؛ عبور بدون
+validator مجاز نیست.
+
+### تفکیک دو ردیف P1-WEBHOOK و نتیجهٔ بررسی کد
+
+در evidence فاز ۱، `P1-WEBHOOK` باید دو ردیف مستقل داشته باشد:
+
+1. **محافظ webhook با secret تصادفی job-only**: قابل اجرای synthetic است. تابع
+   `app/core/webhook_guard.py:is_valid_webhook` secret دریافتی را با secret مورد انتظار
+   constant-time مقایسه می‌کند؛ یک مقدار تصادفی فقط برای همان job می‌تواند برای حالت درست
+   و یک مقدار نادرست برای حالت ردشده استفاده شود. این ردیف به Telegram واقعی وصل نمی‌شود.
+2. **تحویل واقعی از Telegram**: در این PR باید `BLOCKED` بماند. در
+   `app/entrypoints/api/main.py` route در line 71 header را با
+   `settings.telegram_webhook_secret` مقایسه می‌کند و برای پاسخ موفق باید secret درست و
+   JSON معتبر update داشته باشد. همچنین در lifespan، line 32 تا 35، `bot.set_webhook` به
+   Telegram API وصل می‌شود و `Bot` در line 25 به `TELEGRAM_BOT_TOKEN` نیاز دارد. بنابراین
+   اجرای end-to-end با startup واقعی به test bot معتبر و دسترسی شبکه به Telegram نیاز دارد؛
+   با token جعلی نباید PASS ادعا شود. نبود آن فقط `BLOCKED` است.
+
+### فهرست تست‌های موجود و مفقود، قبل از PR دوم
+
+این inventory قبل از شروع PR دوم باید دوباره با tree واقعی بررسی شود. در وضعیت فعلی:
+
+| Gate | تست/شاهد موجود در `tests/` | تست end-to-end مفقود | برنامهٔ PR دوم، بدون تغییر app/migration |
+|---|---|---|---|
+| Race فرم یک‌بارمصرف | `tests/unit/test_security_primitives.py` فقط shape/hash/expiry را بررسی می‌کند. | تست دو مصرف هم‌زمان با یک winner وجود ندارد. | افزودن integration test با دو session/transaction و assertion دقیقاً یک winner؛ اگر نیازمند تغییر API یا schema شد، فقط گزارش blocker. |
+| Outbox دو worker و reclaim | `tests/unit/test_outbox.py` فقط backoff را بررسی می‌کند. | claim هم‌زمان، duplicate prevention و stuck reclaim وجود ندارد. | افزودن integration test با دو worker synthetic، یک handler شمارنده و lease expiry؛ اگر registry فعلی مانع شد، `BLOCKED` بماند و app تغییر نکند. |
+| Restore | تستی در `tests/` وجود ندارد؛ فقط `scripts/restore_drill.sh` و runbook هستند. | backup/restore واقعی با checksum و row count وجود ندارد. | افزودن harness integration/CI برای DB disposable و ثبت checksum؛ بدون backup واقعی یا ابزار موجود، `BLOCKED`. |
+| Role separation | `tests/unit/test_deployment_config.py` و `scripts/check_db_role_separation.py` static هستند. | probe runtime با `psql` و رد `DELETE` روی `audit` با role runtime وجود ندارد. | افزودن integration probe که `current_user` را بررسی و `DELETE` را عمداً ردشده assert کند؛ migration و app دست‌نخورده بمانند. |
+| Webhook guard | `tests/unit/test_security_primitives.py::test_webhook_constant_time_guard` موجود است. | تست route با startup واقعی و تحویل واقعی Telegram وجود ندارد. | guard synthetic با secret تصادفی در PR1؛ route/Telegram test فقط با test bot معتبر در PR2 وگرنه `BLOCKED`. |
+
+نبودن این تست‌ها در PR1 به‌عنوان موفقیت پنهان نمی‌شود: ردیف‌ها در evidence
+`BLOCKED` یا `NOT RUN` می‌مانند و PR2 برنامهٔ مستقل و تأیید جداگانه خواهد داشت.
+
+## روش Git برای STG-001 — شاخهٔ جدا و Pull Request
+
+این دستورها برای اجرای صاحب پروژه در جلسهٔ بعد هستند؛ دستیار push، commit یا PR ایجاد
+نمی‌کند. قبل از شروع، `main` باید همان baseline تأییدشده باشد.
+
+### ۱. ساخت شاخه
+
+```bash
+git switch main
+git pull --ff-only origin main
+git switch -c stg-001-ci-gate
+git branch --show-current
+```
+
+خروجی مورد انتظار: نام شاخهٔ آخر `stg-001-ci-gate` باشد و `git pull --ff-only` بدون
+اختلاف یا merge انجام شود. اگر pull اختلاف داشت، متوقف شوید و فقط پیام sanitized را
+گزارش کنید.
+
+### ۲. اعمال و بررسی تغییرات STG-001 در همان شاخه
+
+تغییرات مجاز این شاخه فقط باید مطابق plan بالا در این فایل‌ها باشد:
+
+- `.github/workflows/ci.yml`
+- `scripts/staging_gate.sh`
+- تست‌ها یا evidenceهای لازم برای اثبات gate، فقط اگر plan و review آن‌ها را تأیید کند.
+
+قبل از stage، بررسی محلی را اجرا کنید:
+
+```bash
+actionlint .github/workflows/ci.yml
+git diff --check
+git status --short
+```
+
+خروجی مورد انتظار: actionlint بدون diagnostic، `git diff --check` بدون خطا و فقط pathهای
+مرتبط با STG-001. اگر فایل نامرتبط، secret، dump، backup یا دادهٔ واقعی ظاهر شد، stage
+نکنید.
+
+### ۳. stage و commit محلی
+
+```bash
+git add .github/workflows/ci.yml scripts/staging_gate.sh
+git diff --cached --name-status
+git diff --cached --check
+git commit -m "ci: add staging runtime gate"
+```
+
+خروجی مورد انتظار: فهرست staged فقط pathهای تأییدشده را نشان دهد، diff check موفق باشد و
+یک commit روی `stg-001-ci-gate` ساخته شود. اگر integration test یا evidence فایل دیگری
+لازم کرد، قبل از `git add` آن path را برای review ثبت کنید.
+
+### ۴. push شاخه توسط صاحب پروژه
+
+```bash
+git push -u origin stg-001-ci-gate
+```
+
+خروجی مورد انتظار: شاخهٔ `stg-001-ci-gate` روی GitHub ساخته و upstream تنظیم شود. توکن یا
+password را در command، chat یا فایل workspace نگذارید؛ از GitHub CLI یا credential manager
+خودتان استفاده کنید. اگر push رد شد، فقط پیام sanitized و نام شاخه را گزارش کنید.
+
+### ۵. بازکردن Pull Request
+
+اگر GitHub CLI نصب و خودتان authenticated هستید:
+
+```bash
+gh pr create \
+  --base main \
+  --head stg-001-ci-gate \
+  --title "ci: add staging runtime gate" \
+  --body "Fix GitHub workflow schema, add disposable service health checks, run migration before integration, and record Phase 1 evidence."
+```
+
+خروجی مورد انتظار: URL یک PR از `stg-001-ci-gate` به `main`. اگر `gh` ندارید، در GitHub
+صفحهٔ repository را باز کنید، `Compare & pull request` را برای همین branch انتخاب کنید،
+base را `main` بگذارید، همان عنوان/شرح را وارد کنید و PR را بسازید.
+
+### ۶. بررسی PR قبل از merge
+
+در PR باید این موارد دیده شوند:
+
+- workflow توسط GitHub load شده و دیگر خطای line 20 ندارد؛
+- `permissions: contents: read` وجود دارد؛
+- health checkهای PostgreSQL/Redis اجرا شده‌اند؛
+- migration پیش از `RUN_INTEGRATION=1` اجرا شده است؛
+- هر gate خروجی PASS/BLOCKED/NOT RUN صادقانه دارد؛
+- هیچ secret در log/artifact نیست؛
+- checks و دو reviewer نتیجه را تأیید کرده‌اند.
+
+merge به `main` فقط با تأیید صاحب پروژه و طبق branch protection انجام شود. تا قبل از آن
+STG-001 و Phase 1 را complete اعلام نکنید.
 
 ## STG-001 به زبان ساده
 

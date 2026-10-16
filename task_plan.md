@@ -21,6 +21,12 @@
 | WP-7 | outbox handler، worker، rate limit و alerts | بعد از تعریف event و approval matrix. |
 | WP-8 | admin read-only، observability، backup/restore و release gate | بعد از evidence runtime و review. |
 
+## بدهی‌های امنیتی release-blocking
+
+| شناسه | تسک | اولویت | وابستگی | وضعیت و مرز |
+|---|---|---|---|---|
+| SEC-001 | **Production guard**: در `APP_ENV=prod` رمز ضعیف، تکراری، placeholderهایی مثل `CHANGE_ME` و مقدارهای CI رد شوند؛ `KEY_PROVIDER=local` در production ممنوع باشد. | `P1 — release-blocking` | تصمیم WP0-09 دربارهٔ KeyProvider، قرارداد config و تست CI؛ باید قبل از production release بسته شود، اما پیش‌نیاز اجرای synthetic STG-001 نیست. | `NOT_STARTED`؛ فقط در roadmap ثبت شده و در این جلسه اجرا نمی‌شود. |
+
 ## ترتیب و قواعد اجرا
 
 1. `STEP-000` باید قبل از WP-1/STG-001 تکمیل شود: workspace hygiene، secret-name audit،
@@ -32,6 +38,8 @@
 5. پس از evidence فاز ۱، تصمیم owner برای شروع WP-2 لازم است. هیچ بسته‌ای بر اساس وجود
    skeleton به‌عنوان release-ready اعلام نمی‌شود.
 6. جزئیات اجرایی STEP-000 و STG-001 فقط در `docs/NEXT_SESSION.md` نگهداری می‌شود.
+7. `SEC-001` بدهی مستقل است؛ وجود آن نباید با synthetic STG-001 حل‌شده یا production-ready
+   تلقی شود.
 
 ## آرشیو وضعیت‌های قدیمی
 
