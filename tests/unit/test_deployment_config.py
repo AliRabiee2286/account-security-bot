@@ -61,20 +61,82 @@ def test_ci_uses_separate_runtime_and_migration_roles() -> None:
     check = jobs["check"]
     assert isinstance(check, dict)
 
-    services = check["services"]
-    assert isinstance(services, dict)
-    postgres = services["postgres"]
-    assert isinstance(postgres, dict)
-    assert postgres["env"]["POSTGRES_USER"] == "sentinel_admin"
-    assert "redis" in services
-
-    job_env = check["env"]
-    assert job_env["DATABASE_URL"].startswith("postgresql+asyncpg://sentinel_app:")
-    assert job_env["MIGRATION_DATABASE_URL"].startswith("postgresql+asyncpg://sentinel_admin:")
-    assert job_env["REDIS_URL"].startswith("redis://:")
+    assert check["runs-on"] == "ubuntu-24.04"
+    assert check["timeout-minutes"] == 20
+    assert workflow["permissions"] == {"contents": "read"}
 
     steps = check["steps"]
-    role_setup = next(step for step in steps if step.get("name") == "Create runtime database role")
-    assert "sentinel_app" in role_setup["run"]
-    migration_step = next(step for step in steps if step.get("name") == "Run migrations")
-    assert migration_step["env"]["MIGRATION_DATABASE_URL"] == job_env["MIGRATION_DATABASE_URL"]
+    credential_step = next(
+        step for step in steps if step.get("name") == "Generate disposable CI credentials"
+    )
+    credential_run = credential_step["run"]
+    assert credential_run.count("secrets.token_urlsafe(24)") == 3
+    assert 'postgres_admin_password="$(python3 -c' in credential_run
+    assert 'sentinel_app_password="$(python3 -c' in credential_run
+    assert 'redis_password="$(python3 -c' in credential_run
+    assert credential_run.count("::add-mask::") == 3
+    assert "GITHUB_ENV" in credential_run
+    assert credential_run.rfind("::add-mask::") < credential_run.find("GITHUB_ENV")
+    expected_dsn_lines = (
+        (
+            r"printf 'DATABASE_URL=postgresql+asyncpg://sentinel_app:%s@"
+            r"127.0.0.1:5432/sentinel\n' "
+            '"$sentinel_app_password"'
+        ),
+        (
+            r"printf 'MIGRATION_DATABASE_URL=postgresql+asyncpg://sentinel_admin:%s@"
+            r"127.0.0.1:5432/sentinel\n' "
+            '"$postgres_admin_password"'
+        ),
+        (
+            r"printf 'PSQL_RUNTIME_DSN=postgresql://sentinel_app:%s@"
+            r"127.0.0.1:5432/sentinel\n' "
+            '"$sentinel_app_password"'
+        ),
+        (
+            r"printf 'PSQL_ADMIN_DSN=postgresql://sentinel_admin:%s@"
+            r"127.0.0.1:5432/sentinel\n' "
+            '"$postgres_admin_password"'
+        ),
+    )
+    for expected_line in expected_dsn_lines:
+        assert expected_line in credential_run
+
+    assert (
+        r"printf 'DATABASE_URL=postgresql+asyncpg://sentinel_app:%s@"
+        r"127.0.0.1:5432/sentinel\n' "
+        '"$postgres_admin_password"'
+    ) not in credential_run
+    assert (
+        r"printf 'MIGRATION_DATABASE_URL=postgresql+asyncpg://sentinel_admin:%s@"
+        r"127.0.0.1:5432/sentinel\n' "
+        '"$sentinel_app_password"'
+    ) not in credential_run
+    assert (
+        r"printf 'PSQL_RUNTIME_DSN=postgresql://sentinel_app:%s@"
+        r"127.0.0.1:5432/sentinel\n' "
+        '"$postgres_admin_password"'
+    ) not in credential_run
+    assert (
+        r"printf 'PSQL_ADMIN_DSN=postgresql://sentinel_admin:%s@"
+        r"127.0.0.1:5432/sentinel\n' "
+        '"$sentinel_app_password"'
+    ) not in credential_run
+
+    postgres_step = next(
+        step for step in steps if step.get("name") == "Start disposable PostgreSQL"
+    )
+    assert "--env POSTGRES_USER=sentinel_admin" in postgres_step["run"]
+    redis_step = next(step for step in steps if step.get("name") == "Start disposable Redis")
+    assert "--requirepass" in redis_step["run"]
+
+    workflow_text = (PROJECT_ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+    for fixed_password in ("sentinel_app_ci", "sentinel_admin_ci", "redis_ci_password"):
+        assert fixed_password not in workflow_text
+
+    gate_step = next(step for step in steps if step.get("name") == "Run staging gate")
+    assert gate_step["run"] == "bash scripts/staging_gate.sh"
+
+    workflow_runs = "\n".join(str(step.get("run", "")) for step in steps)
+    for gate_command in ("alembic", "pytest", "ruff", "mypy", "lint-imports"):
+        assert gate_command not in workflow_runs

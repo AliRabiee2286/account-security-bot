@@ -28,3 +28,9 @@ Offline/static PASS is informative and does not close Phase 1.
 
 No production credentials or real employee data may be used for this run.
 | P1-LOCK | reviewed `uv.lock` + frozen install | BLOCKED | | |
+
+## Recorded CI runs
+
+| Run | Commit | Result | Cause | Executed before failure | Not run after failure | Evidence / reviewers |
+|---|---|---|---|---|---|---|
+| #2 | `d9df3ec` | **FAIL** | `tests/unit/test_deployment_config.py::test_ci_uses_separate_runtime_and_migration_roles` raised `KeyError: 'services'`; the test assumed the removed GitHub service-container design. | Service health; lock check; Ruff; format check; mypy; import-linter; 72 unit tests passed. | Migration; runtime role separation; `RUN_INTEGRATION=1`; form race; outbox two-worker; webhook guard/delivery; restore; later gate summaries. | User-provided GitHub Actions log; run URL not supplied. Reviewer 1: project owner. Reviewer 2: independent review pending. |

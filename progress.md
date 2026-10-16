@@ -81,3 +81,16 @@
   integration، `RUN_INTEGRATION=1`، race/reclaim، restore، actionlint محلی و مسیر PR.
 - `task_plan.md` بدهی `SEC-001` برای production guard را با اولویت P1 و وابستگی‌ها ثبت کرد؛
   هیچ کد، workflow یا migration در این جلسه تغییر نکرد و STG-001 اجرا نشد.
+
+## 2026-10-16 — run #2 و اصلاح تست طراحی قدیمی CI
+- اجرای واقعی GitHub Actions با commit `d9df3ec` در `Run staging gate` و مرحلهٔ
+  `uv run pytest -q` متوقف شد.
+- service health، lock، Ruff، format، mypy، import-linter و ۷۲ تست unit با موفقیت ثبت شدند.
+- تست `tests/unit/test_deployment_config.py::test_ci_uses_separate_runtime_and_migration_roles`
+  به‌دلیل فرض قدیمی `jobs.check.services` با `KeyError: 'services'` شکست خورد؛ هیچ مرحلهٔ
+  بعدی اجرا نشد. این خطای تست بود، نه باگ app یا migration.
+- تست deployment config برای طراحی جدید به‌روزرسانی شد: credential step، سه secret
+  تصادفی و mask‌شده، DSNهای `sentinel_app`/`sentinel_admin`، نبود password ثابت،
+  `permissions: contents: read`، `ubuntu-24.04` و فراخوانی `scripts/staging_gate.sh`.
+- هشدار Node.js 20 به `SEC-001` اضافه شد. تغییرات فقط در test، workflow و مستندات است؛
+  `app/` و `migrations/` دست‌نخورده‌اند.

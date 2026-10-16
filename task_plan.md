@@ -25,7 +25,7 @@
 
 | شناسه | تسک | اولویت | وابستگی | وضعیت و مرز |
 |---|---|---|---|---|
-| SEC-001 | **Production guard**: در `APP_ENV=prod` رمز ضعیف، تکراری، placeholderهایی مثل `CHANGE_ME` و مقدارهای CI رد شوند؛ `KEY_PROVIDER=local` در production ممنوع باشد. | `P1 — release-blocking` | تصمیم WP0-09 دربارهٔ KeyProvider، قرارداد config و تست CI؛ باید قبل از production release بسته شود، اما پیش‌نیاز اجرای synthetic STG-001 نیست. | `NOT_STARTED`؛ فقط در roadmap ثبت شده و در این جلسه اجرا نمی‌شود. |
+| SEC-001 | **Production guard**: در `APP_ENV=prod` رمز ضعیف، تکراری، placeholderهایی مثل `CHANGE_ME` و مقدارهای CI رد شوند؛ `KEY_PROVIDER=local` در production ممنوع باشد. هشدار سازگاری actionهای GitHub با Node.js 20 نیز قبل از release بررسی و actionها به نسخهٔ پشتیبانی‌شده ارتقا یا pin شوند. | `P1 — release-blocking` | تصمیم WP0-09 دربارهٔ KeyProvider، قرارداد config و تست CI؛ باید قبل از production release بسته شود، اما پیش‌نیاز اجرای synthetic STG-001 نیست. | `NOT_STARTED`؛ فقط در roadmap ثبت شده و در این جلسه اجرا نمی‌شود. |
 
 ## ترتیب و قواعد اجرا
 
