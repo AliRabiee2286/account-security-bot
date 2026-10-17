@@ -25,7 +25,8 @@
 
 | شناسه | تسک | اولویت | وابستگی | وضعیت و مرز |
 |---|---|---|---|---|
-| SEC-001 | **Production guard**: در `APP_ENV=prod` رمز ضعیف، تکراری، placeholderهایی مثل `CHANGE_ME` و مقدارهای CI رد شوند؛ `KEY_PROVIDER=local` در production ممنوع باشد. هشدار سازگاری actionهای GitHub با Node.js 20 نیز قبل از release بررسی و actionها به نسخهٔ پشتیبانی‌شده ارتقا یا pin شوند. | `P1 — release-blocking` | تصمیم WP0-09 دربارهٔ KeyProvider، قرارداد config و تست CI؛ باید قبل از production release بسته شود، اما پیش‌نیاز اجرای synthetic STG-001 نیست. | `NOT_STARTED`؛ فقط در roadmap ثبت شده و در این جلسه اجرا نمی‌شود. |
+| SEC-001 | **Production guard**: در `APP_ENV=prod` رمز ضعیف، تکراری، placeholderهایی مثل `CHANGE_ME` و مقدارهای CI رد شوند؛ `KEY_PROVIDER=local` در production ممنوع باشد. هشدار سازگاری actionهای GitHub با Node.js 20 نیز قبل از release بررسی و actionها به نسخهٔ پشتیبانی‌شده ارتقا یا pin شوند. در خطاهای اعتبارسنجی Settings، `hide_input_in_errors` فعال شود؛ خطای Pydantic در CI بخشی از مقدار ورودی، از جمله تکه‌ای از رمز Redis، را در log چاپ کرد و mask گیت‌هاب و `redact_file` آن را نگرفتند. | `P1 — release-blocking` | تصمیم WP0-09 دربارهٔ KeyProvider، قرارداد config و تست CI؛ باید قبل از production release بسته شود، اما پیش‌نیاز اجرای synthetic STG-001 نیست. | `NOT_STARTED`؛ فقط در roadmap ثبت شده و در این جلسه اجرا نمی‌شود. |
+| ARCH-001 | **Migration least privilege**: migration نباید کل `Settings` برنامه و توکن Telegram را بخواهد؛ `MigrationSettings` جدا یا خواندن مستقیم `MIGRATION_DATABASE_URL` استفاده شود تا Alembic فقط تنظیمات لازم برای نقش admin را بارگذاری کند. | `P1 — architecture` | بازطراحی مرز config و `migrations/env.py`؛ باید جداگانه بررسی و با تست migration تأیید شود. | `NOT_STARTED`؛ فقط بدهی ثبت شد و در این جلسه اجرا نمی‌شود. |
 
 ## ترتیب و قواعد اجرا
 

@@ -70,7 +70,7 @@ write_summary() {
       printf '| P1-ROLE | %s | audit.audit_events DELETE only |\n' "$P1_ROLE_STATUS"
       printf '| P1-INTEGRATION | %s | env-presence contract only; no DB/Redis connection |\n' "$P1_INTEGRATION_STATUS"
       printf '| P1-WEBHOOK-GUARD | %s | function-level, no HTTP |\n' "$P1_WEBHOOK_GUARD_STATUS"
-      printf '| P1-WEBHOOK-DELIVERY | %s | real Telegram delivery; outside PR1 |\n' "$P1_WEBHOOK_DELIVERY_STATUS"
+      printf '| P1-WEBHOOK-DELIVERY | %s | real Telegram delivery; synthetic token only loads Settings; no Telegram contact; outside PR1 |\n' "$P1_WEBHOOK_DELIVERY_STATUS"
       printf '| P1-RACE | %s | concurrent form consume; test absent in PR1 |\n' "$P1_RACE_STATUS"
       printf '| P1-REDIS-WORKERS | %s | two-worker outbox/reclaim; test absent in PR1 |\n' "$P1_REDIS_WORKERS_STATUS"
       printf '| P1-RESTORE | %s | backup/restore; test absent in PR1 |\n' "$P1_RESTORE_STATUS"
@@ -288,7 +288,7 @@ assert not is_valid_webhook(secrets.token_urlsafe(32), expected)
 print("P1-WEBHOOK-GUARD=PASS scope=function-level, no HTTP; is_valid_webhook with job-only random secret")
 PY
 P1_WEBHOOK_GUARD_STATUS=PASS
-echo 'P1-WEBHOOK-DELIVERY=BLOCKED scope=real Telegram delivery; outside PR1 and no real bot token'
+echo 'P1-WEBHOOK-DELIVERY=BLOCKED scope=real Telegram delivery; synthetic token is settings-load-only; no Telegram contact; outside PR1 and no real bot token'
 
 echo '== scenario coverage not implemented in PR1 =='
 echo 'P1-RACE=BLOCKED no concurrent form-consume integration test exists in tests/'

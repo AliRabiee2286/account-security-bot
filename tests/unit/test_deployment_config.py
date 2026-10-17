@@ -70,13 +70,25 @@ def test_ci_uses_separate_runtime_and_migration_roles() -> None:
         step for step in steps if step.get("name") == "Generate disposable CI credentials"
     )
     credential_run = credential_step["run"]
-    assert credential_run.count("secrets.token_urlsafe(24)") == 3
+    assert credential_run.count("secrets.token_urlsafe(24)") == 4
+    assert credential_run.count("secrets.token_urlsafe(32)") == 1
     assert 'postgres_admin_password="$(python3 -c' in credential_run
     assert 'sentinel_app_password="$(python3 -c' in credential_run
     assert 'redis_password="$(python3 -c' in credential_run
-    assert credential_run.count("::add-mask::") == 3
+    assert 'telegram_webhook_secret="$(python3 -c' in credential_run
+    assert 'telegram_bot_token="$(python3 -c' in credential_run
+    assert 'public_base_url="https://ci-${GITHUB_RUN_ID}.invalid"' in credential_run
+    assert credential_run.count("::add-mask::") == 6
     assert "GITHUB_ENV" in credential_run
+    for variable in ("telegram_webhook_secret", "telegram_bot_token", "public_base_url"):
+        assert f"printf '::add-mask::%s\\n' \"${variable}\"" in credential_run
     assert credential_run.rfind("::add-mask::") < credential_run.find("GITHUB_ENV")
+    for key, variable in (
+        ("TELEGRAM_WEBHOOK_SECRET", "telegram_webhook_secret"),
+        ("TELEGRAM_BOT_TOKEN", "telegram_bot_token"),
+        ("PUBLIC_BASE_URL", "public_base_url"),
+    ):
+        assert f"printf '{key}=%s\\n' \"${variable}\"" in credential_run
     expected_dsn_lines = (
         (
             r"printf 'DATABASE_URL=postgresql+asyncpg://sentinel_app:%s@"
@@ -133,6 +145,8 @@ def test_ci_uses_separate_runtime_and_migration_roles() -> None:
     workflow_text = (PROJECT_ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
     for fixed_password in ("sentinel_app_ci", "sentinel_admin_ci", "redis_ci_password"):
         assert fixed_password not in workflow_text
+    assert "TELEGRAM_BOT_TOKEN=123456789:" not in workflow_text
+    assert "TELEGRAM_WEBHOOK_SECRET=offline_dummy" not in workflow_text
 
     gate_step = next(step for step in steps if step.get("name") == "Run staging gate")
     assert gate_step["run"] == "bash scripts/staging_gate.sh"
