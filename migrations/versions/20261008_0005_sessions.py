@@ -22,8 +22,12 @@ def upgrade() -> None:
       created_at timestamptz NOT NULL DEFAULT now(),
       last_seen_at timestamptz NOT NULL DEFAULT now()
     );
+    """)
+    op.execute("""
     CREATE INDEX ix_sessions_active ON identity.sessions(employee_id, expires_at)
       WHERE revoked_at IS NULL;
+    """)
+    op.execute("""
     CREATE TABLE identity.mfa_credentials (
       id uuid PRIMARY KEY,
       employee_id uuid NOT NULL REFERENCES identity.employees(id),
@@ -33,8 +37,12 @@ def upgrade() -> None:
       revoked_at timestamptz,
       created_at timestamptz NOT NULL DEFAULT now()
     );
+    """)
+    op.execute("""
     GRANT SELECT, INSERT, UPDATE ON identity.sessions,
       identity.mfa_credentials TO sentinel_app_role;
+    """)
+    op.execute("""
     REVOKE DELETE ON identity.sessions, identity.mfa_credentials FROM sentinel_app_role;
     """)
 

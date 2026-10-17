@@ -32,6 +32,8 @@ def upgrade() -> None:
         created_at timestamptz NOT NULL DEFAULT now(),
         updated_at timestamptz NOT NULL DEFAULT now()
     );
+    """)
+    op.execute("""
     CREATE TABLE identity.roles (
         id uuid PRIMARY KEY,
         code varchar(50) NOT NULL UNIQUE,
@@ -42,16 +44,22 @@ def upgrade() -> None:
         updated_at timestamptz NOT NULL DEFAULT now(),
         CONSTRAINT ck_roles_not_self_parent CHECK (parent_role_id IS DISTINCT FROM id)
     );
+    """)
+    op.execute("""
     CREATE TABLE identity.permissions (
         code varchar(80) PRIMARY KEY,
         requires_second_approval boolean NOT NULL DEFAULT false,
         observer_may_execute boolean NOT NULL DEFAULT true
     );
+    """)
+    op.execute("""
     CREATE TABLE identity.role_permissions (
         role_id uuid NOT NULL REFERENCES identity.roles(id),
         permission_code varchar(80) NOT NULL REFERENCES identity.permissions(code),
         PRIMARY KEY (role_id, permission_code)
     );
+    """)
+    op.execute("""
     CREATE TABLE identity.employees (
         id uuid PRIMARY KEY,
         telegram_user_id bigint NOT NULL UNIQUE,
@@ -67,9 +75,9 @@ def upgrade() -> None:
         created_at timestamptz NOT NULL DEFAULT now(),
         updated_at timestamptz NOT NULL DEFAULT now()
     );
-    CREATE INDEX ix_employees_department ON identity.employees(department_id);
-    CREATE INDEX ix_employees_status ON identity.employees(status);
     """)
+    op.execute("CREATE INDEX ix_employees_department ON identity.employees(department_id)")
+    op.execute("CREATE INDEX ix_employees_status ON identity.employees(status)")
 
     # Append-only audit log, partitioned monthly (database principle #7).
     op.execute("""
@@ -89,10 +97,11 @@ def upgrade() -> None:
         row_hash varchar(64) NOT NULL,
         PRIMARY KEY (id, occurred_at)
     ) PARTITION BY RANGE (occurred_at);
-    CREATE INDEX ix_audit_actor_time ON audit.audit_events(actor_id, occurred_at);
-    CREATE INDEX ix_audit_target ON audit.audit_events(target_type, target_id);
-    CREATE INDEX ix_audit_request ON audit.audit_events(request_id);
-
+    """)
+    op.execute("CREATE INDEX ix_audit_actor_time ON audit.audit_events(actor_id, occurred_at)")
+    op.execute("CREATE INDEX ix_audit_target ON audit.audit_events(target_type, target_id)")
+    op.execute("CREATE INDEX ix_audit_request ON audit.audit_events(request_id)")
+    op.execute("""
     CREATE OR REPLACE FUNCTION audit.ensure_partition(month_start date) RETURNS void AS $$
     DECLARE
         part text := 'audit_events_' || to_char(month_start, 'YYYY_MM');
@@ -102,19 +111,25 @@ def upgrade() -> None:
              FOR VALUES FROM (%L) TO (%L)',
             part, month_start, (month_start + interval '1 month')::date);
     END $$ LANGUAGE plpgsql;
-
+    """)
+    op.execute("""
     SELECT audit.ensure_partition(
         (date_trunc('month', now())::date + (i || ' month')::interval)::date
     )
     FROM generate_series(0, 3) AS i;
-    CREATE TABLE audit.audit_events_default PARTITION OF audit.audit_events DEFAULT;
-
+    """)
+    op.execute("CREATE TABLE audit.audit_events_default PARTITION OF audit.audit_events DEFAULT")
+    op.execute("""
     CREATE OR REPLACE FUNCTION audit.forbid_mutation() RETURNS trigger AS $$
     BEGIN
         RAISE EXCEPTION 'audit.audit_events is append-only';
     END $$ LANGUAGE plpgsql;
+    """)
+    op.execute("""
     CREATE TRIGGER trg_audit_no_update BEFORE UPDATE OR DELETE ON audit.audit_events
         FOR EACH ROW EXECUTE FUNCTION audit.forbid_mutation();
+    """)
+    op.execute("""
     CREATE TRIGGER trg_audit_no_truncate BEFORE TRUNCATE ON audit.audit_events
         FOR EACH STATEMENT EXECUTE FUNCTION audit.forbid_mutation();
     """)
@@ -131,8 +146,10 @@ def upgrade() -> None:
         created_at timestamptz NOT NULL DEFAULT now(),
         available_at timestamptz NOT NULL DEFAULT now()
     );
-    CREATE INDEX ix_outbox_pending ON core.outbox(available_at) WHERE status = 'pending';
     """)
+    op.execute(
+        "CREATE INDEX ix_outbox_pending ON core.outbox(available_at) WHERE status = 'pending'"
+    )
 
     # Seed permission catalogue and the D-007 role skeleton (gen_random_uuid ok for seeds).
     for p in CATALOGUE.values():
@@ -165,11 +182,13 @@ def upgrade() -> None:
             CREATE ROLE sentinel_app_role NOLOGIN;
         END IF;
     END $$;
-    GRANT sentinel_app_role TO sentinel_app;
-    GRANT USAGE ON SCHEMA core, identity, audit TO sentinel_app_role;
-    GRANT SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA identity, core TO sentinel_app_role;
-    GRANT SELECT, INSERT ON ALL TABLES IN SCHEMA audit TO sentinel_app_role;
     """)
+    op.execute("GRANT sentinel_app_role TO sentinel_app")
+    op.execute("GRANT USAGE ON SCHEMA core, identity, audit TO sentinel_app_role")
+    op.execute(
+        "GRANT SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA identity, core TO sentinel_app_role"
+    )
+    op.execute("GRANT SELECT, INSERT ON ALL TABLES IN SCHEMA audit TO sentinel_app_role")
 
 
 def downgrade() -> None:

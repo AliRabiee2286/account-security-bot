@@ -1,40 +1,106 @@
 name: ci
-on: [pull_request, push]
+
+on:
+  pull_request:
+  push:
+
+permissions:
+  contents: read
+
 jobs:
   check:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
     env:
-      DATABASE_URL: postgresql+asyncpg://sentinel_app:sentinel_app_ci@localhost:5432/sentinel
-      MIGRATION_DATABASE_URL: postgresql+asyncpg://sentinel_admin:sentinel_admin_ci@localhost:5432/sentinel
-      REDIS_URL: redis://:redis_ci_password@localhost:6379/0
-    services:
-      postgres:
-        image: postgres:16-alpine
-        env:
-          POSTGRES_USER: sentinel_admin
-          POSTGRES_PASSWORD: sentinel_admin_ci
-          POSTGRES_DB: sentinel
-        ports: ["5432:5432"]
-      redis:
-        image: redis:7-alpine
-        command: ["redis-server", "--requirepass", "redis_ci_password"]
-        ports: ["6379:6379"]
+      APP_ENV: staging
+      RUN_WEBHOOK_SMOKE: "0"
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v3
-      - run: uv sync --frozen
-      - name: Create runtime database role
-        env:
-          PGPASSWORD: sentinel_admin_ci
-        run: >-
-          psql --host localhost --port 5432 --username sentinel_admin --dbname sentinel
-          --command "CREATE ROLE sentinel_app LOGIN PASSWORD 'sentinel_app_ci';"
-      - run: uv run ruff check . && uv run ruff format --check .
-      - run: uv run mypy app
-      - run: uv run lint-imports            # D-009 module boundaries
-      - run: uv run pytest -q
-      - name: Run migrations
-        env:
-          DATABASE_URL: postgresql+asyncpg://sentinel_app:sentinel_app_ci@localhost:5432/sentinel
-          MIGRATION_DATABASE_URL: postgresql+asyncpg://sentinel_admin:sentinel_admin_ci@localhost:5432/sentinel
-        run: uv run alembic upgrade head
+
+      - name: Generate disposable CI credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          postgres_admin_password="$(python3 -c 'import secrets; print(secrets.token_urlsafe(24))')"
+          sentinel_app_password="$(python3 -c 'import secrets; print(secrets.token_urlsafe(24))')"
+          redis_password="$(python3 -c 'import secrets; print(secrets.token_urlsafe(24))')"
+          telegram_webhook_secret="$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')"
+          telegram_bot_token="$(python3 -c 'import secrets; print(f"{secrets.randbelow(900000000) + 100000000}:{secrets.token_urlsafe(24)}")')"
+          public_base_url="https://ci-${GITHUB_RUN_ID}.invalid"
+          printf '::add-mask::%s\n' "$postgres_admin_password"
+          printf '::add-mask::%s\n' "$sentinel_app_password"
+          printf '::add-mask::%s\n' "$redis_password"
+          printf '::add-mask::%s\n' "$telegram_webhook_secret"
+          printf '::add-mask::%s\n' "$telegram_bot_token"
+          printf '::add-mask::%s\n' "$public_base_url"
+          {
+            printf 'POSTGRES_ADMIN_PASSWORD=%s\n' "$postgres_admin_password"
+            printf 'SENTINEL_APP_PASSWORD=%s\n' "$sentinel_app_password"
+            printf 'REDIS_PASSWORD=%s\n' "$redis_password"
+            printf 'TELEGRAM_WEBHOOK_SECRET=%s\n' "$telegram_webhook_secret"
+            printf 'TELEGRAM_BOT_TOKEN=%s\n' "$telegram_bot_token"
+            printf 'PUBLIC_BASE_URL=%s\n' "$public_base_url"
+            printf 'DATABASE_URL=postgresql+asyncpg://sentinel_app:%s@127.0.0.1:5432/sentinel\n' "$sentinel_app_password"
+            printf 'MIGRATION_DATABASE_URL=postgresql+asyncpg://sentinel_admin:%s@127.0.0.1:5432/sentinel\n' "$postgres_admin_password"
+            printf 'PSQL_RUNTIME_DSN=postgresql://sentinel_app:%s@127.0.0.1:5432/sentinel\n' "$sentinel_app_password"
+            printf 'PSQL_ADMIN_DSN=postgresql://sentinel_admin:%s@127.0.0.1:5432/sentinel\n' "$postgres_admin_password"
+            printf 'REDIS_URL=redis://:%s@127.0.0.1:6379/0\n' "$redis_password"
+          } >> "$GITHUB_ENV"
+
+      - name: Start disposable PostgreSQL
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --detach --name ci-postgres \
+            --env POSTGRES_USER=sentinel_admin \
+            --env POSTGRES_PASSWORD="$POSTGRES_ADMIN_PASSWORD" \
+            --env POSTGRES_DB=sentinel \
+            --publish 5432:5432 \
+            postgres:16-alpine
+
+      - name: Start disposable Redis
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --detach --name ci-redis \
+            --env REDIS_PASSWORD="$REDIS_PASSWORD" \
+            --publish 6379:6379 \
+            redis:7-alpine \
+            sh -c 'exec redis-server --appendonly yes --protected-mode yes --requirepass "$REDIS_PASSWORD"'
+
+      - name: Wait for PostgreSQL and Redis
+        shell: bash
+        run: |
+          set -euo pipefail
+          postgres_ready=0
+          redis_ready=0
+          for _ in {1..30}; do
+            if psql "$PSQL_ADMIN_DSN" --no-psqlrc --quiet --tuples-only --command 'SELECT 1' >/dev/null 2>&1; then
+              postgres_ready=1
+              break
+            fi
+            sleep 2
+          done
+          for _ in {1..30}; do
+            if docker run --rm --network host --env REDISCLI_AUTH="$REDIS_PASSWORD" redis:7-alpine \
+              redis-cli -h 127.0.0.1 -p 6379 ping 2>/dev/null | grep -qx PONG; then
+              redis_ready=1
+              break
+            fi
+            sleep 2
+          done
+          test "$postgres_ready" -eq 1
+          test "$redis_ready" -eq 1
+          printf 'CI_SERVICES_HEALTHY=1\n' >> "$GITHUB_ENV"
+          printf 'PostgreSQL health: ready\nRedis health: PONG\n'
+
+      - name: Run staging gate
+        shell: bash
+        run: bash scripts/staging_gate.sh
+
+      - name: Clean disposable services
+        if: always()
+        shell: bash
+        run: |
+          docker rm --force ci-postgres ci-redis >/dev/null 2>&1 || true
