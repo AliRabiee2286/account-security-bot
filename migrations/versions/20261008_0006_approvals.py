@@ -19,9 +19,9 @@ def upgrade():
       created_at timestamptz NOT NULL DEFAULT now(),
       CONSTRAINT ck_approval_not_self CHECK (approved_by IS NULL OR approved_by <> requested_by)
     );
-    GRANT SELECT, INSERT, UPDATE ON identity.approval_requests TO sentinel_app_role;
-    REVOKE DELETE ON identity.approval_requests FROM sentinel_app_role;
     """)
+    op.execute("GRANT SELECT, INSERT, UPDATE ON identity.approval_requests TO sentinel_app_role")
+    op.execute("REVOKE DELETE ON identity.approval_requests FROM sentinel_app_role")
 
 
 def downgrade():

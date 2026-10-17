@@ -24,10 +24,10 @@ def upgrade() -> None:
         last_accessed_at timestamptz,
         created_at timestamptz NOT NULL DEFAULT now()
     );
-    CREATE INDEX ix_credentials_owner ON social.credentials(owner_type, owner_id);
-    REVOKE DELETE ON social.credentials FROM sentinel_app_role;
-    GRANT SELECT, INSERT, UPDATE ON social.credentials TO sentinel_app_role;
     """)
+    op.execute("CREATE INDEX ix_credentials_owner ON social.credentials(owner_type, owner_id)")
+    op.execute("REVOKE DELETE ON social.credentials FROM sentinel_app_role")
+    op.execute("GRANT SELECT, INSERT, UPDATE ON social.credentials TO sentinel_app_role")
 
 
 def downgrade() -> None:

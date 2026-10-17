@@ -30,9 +30,10 @@ def upgrade() -> None:
         created_at timestamptz NOT NULL DEFAULT now(),
         updated_at timestamptz NOT NULL DEFAULT now()
     );
-    CREATE INDEX ix_mailboxes_owner ON mailboxes.mailboxes(current_owner_id);
-    CREATE INDEX ix_mailboxes_status ON mailboxes.mailboxes(status);
-
+    """)
+    op.execute("CREATE INDEX ix_mailboxes_owner ON mailboxes.mailboxes(current_owner_id)")
+    op.execute("CREATE INDEX ix_mailboxes_status ON mailboxes.mailboxes(status)")
+    op.execute("""
     CREATE TABLE mailboxes.assignments (
         id uuid PRIMARY KEY,
         mailbox_id uuid NOT NULL REFERENCES mailboxes.mailboxes(id),
@@ -43,7 +44,11 @@ def upgrade() -> None:
         reason varchar(500),
         CONSTRAINT ck_assignment_dates CHECK (revoked_at IS NULL OR revoked_at >= assigned_at)
     );
-    CREATE INDEX ix_assignments_mailbox ON mailboxes.assignments(mailbox_id, assigned_at DESC);
+    """)
+    op.execute(
+        "CREATE INDEX ix_assignments_mailbox ON mailboxes.assignments(mailbox_id, assigned_at DESC)"
+    )
+    op.execute("""
     CREATE UNIQUE INDEX uq_active_mailbox_assignment ON mailboxes.assignments(mailbox_id)
       WHERE revoked_at IS NULL;
     """)
@@ -67,9 +72,10 @@ def upgrade() -> None:
         updated_at timestamptz NOT NULL DEFAULT now(),
         UNIQUE(platform, handle)
     );
-    CREATE INDEX ix_social_owner ON social.social_accounts(owner_id);
-    CREATE INDEX ix_social_status ON social.social_accounts(status);
-
+    """)
+    op.execute("CREATE INDEX ix_social_owner ON social.social_accounts(owner_id)")
+    op.execute("CREATE INDEX ix_social_status ON social.social_accounts(status)")
+    op.execute("""
     CREATE TABLE social.one_time_forms (
         token_hash varchar(64) PRIMARY KEY,
         subject_id uuid NOT NULL,
@@ -81,6 +87,8 @@ def upgrade() -> None:
           purpose IN ('social_oauth','credential_entry','seed_recovery')
         )
     );
+    """)
+    op.execute("""
     CREATE INDEX ix_forms_expiry ON social.one_time_forms(expires_at)
       WHERE consumed_at IS NULL;
     """)
@@ -102,14 +110,18 @@ def upgrade() -> None:
         created_at timestamptz NOT NULL DEFAULT now(),
         updated_at timestamptz NOT NULL DEFAULT now()
     );
+    """)
+    op.execute("""
     CREATE INDEX ix_incidents_open_deadline ON incidents.incidents(removal_deadline)
       WHERE status IN ('open','acknowledged','removal_pending');
     """)
     # Grant only what the app needs. No blanket DELETE for sensitive domains.
+    op.execute("GRANT USAGE ON SCHEMA mailboxes, social, incidents TO sentinel_app_role")
     op.execute("""
-    GRANT USAGE ON SCHEMA mailboxes, social, incidents TO sentinel_app_role;
     GRANT SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA
       mailboxes, social, incidents TO sentinel_app_role;
+    """)
+    op.execute("""
     REVOKE DELETE ON ALL TABLES IN SCHEMA mailboxes, social, incidents FROM sentinel_app_role;
     """)
 
