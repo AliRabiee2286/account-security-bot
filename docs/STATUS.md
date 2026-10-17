@@ -1,6 +1,6 @@
 # وضعیت canonical پروژه
 
-**آخرین بازبینی:** ۱۶ اکتبر ۲۰۲۶، منطقه زمانی تهران؛ baseline در ۱۴ اکتبر پذیرفته شد
+**آخرین بازبینی:** ۱۷ اکتبر ۲۰۲۶، منطقه زمانی تهران؛ baseline در ۱۴ اکتبر پذیرفته شد
 **دامنه این به‌روزرسانی:** فقط مستندات؛ بدون تغییر کد، migration یا اجرای سرویس
 
 این فایل تنها مرجع وضعیت جاری و تنها محل ثبت «قدم بعدی» رسمی است. وضعیت‌ها و قدم‌های
@@ -27,9 +27,9 @@
 | حوزه | وضعیت | توضیح کوتاه و شاهد |
 |---|---|---|
 | بنیاد offline/static | `VERIFIED` | lock، compile، unit test، Ruff، mypy، import boundary و validatorهای ثبت‌شده سبز هستند. |
-| CI workflow syntax | `PARTIAL` | GitHub بعد از push فایل `.github/workflows/ci.yml` را در line 20, column 18 رد کرد؛ هیچ job اجرا نشد. |
-| migration runtime روی DB خالی | `BLOCKED` | اجرای واقعی PostgreSQL در این workspace انجام نشده و evidence staging وجود ندارد. |
-| PostgreSQL/Redis و CI runtime | `BLOCKED` | علاوه بر نبود evidence کامل، workflow فعلی قبل از شروع job به‌دلیل schema خطادار متوقف شده است. |
+| CI workflow syntax | `VERIFIED` | run #5 با commit `a20c620` در GitHub Actions بارگذاری و کامل اجرا شد؛ پنج سناریوی خارج از پوشش همچنان `BLOCKED/NOT_RUN` هستند. |
+| migration chain روی DB خالی | `VERIFIED` | `alembic upgrade head` روی PostgreSQL 16 disposable موفق شد و `current=heads=0007` ثبت شد؛ محدودیت: نقش admin در CI، superuser بود و اثبات با admin غیر-superuser انجام نشده است. |
+| PostgreSQL/Redis و CI runtime | `PARTIAL` | health، role probe و integration قرارداد env سبز شدند؛ review امنیتی و integration واقعی DB/Redis و چهار سناریوی runtime دیگر هنوز evidence ندارند. |
 | Telegram Mini App proof | `IMPLEMENTED_NOT_VERIFIED` | validator و route ثبت‌نام وجود دارد؛ deploy و smoke واقعی نداریم. |
 | registration/approval | `PARTIAL` | ثبت pending و اسکلت approval وجود دارد؛ زنجیره کامل session و MFA اثبات نشده است. |
 | session/auth resolver | `PARTIAL` | resolver و hash DB-backed وجود دارند؛ همه routeهای حساس هنوز به جریان نهایی وصل نیستند. |
@@ -45,23 +45,22 @@
 
 ## وضعیت فازها
 
-- **Phase 1: `BLOCKED`** — workflow CI ابتدا باید اصلاح و با actionlint اعتبارسنجی شود؛
-  سپس migration از DB خالی، Redis/worker، race test فرم و outbox، webhook smoke،
-  backup/restore، CI runtime و review دومرحله‌ای هنوز evidence می‌خواهند.
+- **Phase 1: `PARTIAL`** — run #5 همهٔ gateهای قابل‌اجرا را سبز کرد: LOCK، SERVICE-HEALTH،
+  OFFLINE، DB با head=`0007`، ROLE، integration قرارداد env و WEBHOOK-GUARD. پنج مورد
+  همچنان `BLOCKED/NOT_RUN` هستند: SECURITY review دومرحله‌ای، تحویل واقعی Telegram،
+  race فرم، دو-worker Redis/outbox و restore.
 - **Phase 2: `BLOCKED`** — WebAuthn واقعی، session issuance بعد از approval/MFA و Mini App
   deploy/integration هنوز انجام نشده‌اند.
 - `offline/static PASS` به‌تنهایی هیچ‌یک از این دو وضعیت را تغییر نمی‌دهد.
 
 ## تنها قدم بعدی رسمی
 
-**`STG-001 — اصلاح و اجرای gate runtime در شاخهٔ جدا و ثبت evidence فاز ۱`**
+**`PR2 — برنامه‌ریزی تست‌های گمشده و evidence تکمیلی`**
 
-`STEP-000` تمام شده است. STG-001 فقط پس از تأیید صریح صاحب پروژه روی شاخهٔ
-`stg-001-ci-gate`، با Pull Request و فقط با دادهٔ synthetic/disposable اجرا می‌شود؛
-در این جلسه اجرا نمی‌شود.
-STG-001 نیز فقط با دادهٔ synthetic و بدون secret واقعی، حساب واقعی کارکنان یا production
-اجرا خواهد شد. اگر یک gate به token معتبر واقعی نیاز داشته باشد، نتیجه `BLOCKED` است و
-از صاحب پروژه token درخواست نمی‌شود.
+`STEP-000` و اجرای STG-001 تا سطح `PARTIAL` انجام شده‌اند. قدم بعدی فقط برنامه‌ریزی PR2
+برای تست‌های گمشده و evidence تکمیلی است؛ در این مرحله هیچ implementation، migration،
+workflow یا runtime test جدیدی اجرا نمی‌شود. هر اجرای بعدی باید با تأیید صریح صاحب پروژه،
+دادهٔ synthetic/disposable و evidence جداگانه انجام شود.
 
 ## ممنوعیت‌های این baseline
 
