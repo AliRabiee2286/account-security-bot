@@ -202,6 +202,19 @@ integration، `RUN_INTEGRATION=1`، race/reclaim، restore و cleanup اضافه
 
 هیچ‌کدام از این اصلاحات در این جلسه اعمال نشده‌اند و هیچ workflow یا scriptی تغییر نکرده است.
 
+## راستی‌آزمایی زنجیرهٔ migration پس از run #4
+
+- وضعیت زنجیرهٔ migration: **`PARTIAL`**.
+- برچسب قبلی `migration chain VERIFIED` فقط به بررسی static اشاره می‌کرد؛ اجرای واقعی
+  `alembic upgrade head` در run #4 آن را رد کرد.
+- در commit `46435a9`، تنظیمات، اتصال PostgreSQL، نقش admin و ساخت نقش runtime با موفقیت
+  انجام شدند، اما `P1-DB` در migration `0001` شکست خورد: چند دستور SQL در یک
+  `op.execute` به‌صورت prepared statement به `asyncpg` رسید و خطای
+  `cannot insert multiple commands into a prepared statement` ایجاد کرد.
+- چون تا این run هیچ database واقعی این زنجیره را اجرا نکرده بود، ویرایش درجا برای رفع
+  همین خطای اجرای اولیه مجاز است. از این پس هر migration که روی database واقعی اعمال شده
+  باشد ویرایش نمی‌شود؛ اصلاح فقط با ساخت migration جدید انجام خواهد شد.
+
 ## تصمیم‌هایی که فقط صاحب پروژه می‌تواند بگیرد
 
 - تأیید داشتن حساب Developer X، هزینه/credit، سقف مصرف و دسترسی API برای حساب آزمایشی.
