@@ -32,6 +32,14 @@ PR متوقف و فقط گزارش sanitized ثبت می‌شود.
 - evidence فقط count، status، SQLSTATE و checksum غیرحساس را نگه می‌دارد؛ token، DSN
   دارای password، payload و dump هرگز ثبت یا upload نمی‌شوند.
 
+### روش اجرای مستقل gateهای integration
+
+گروه‌های `connectivity`، `race`، `role`، `outbox` و `restore` هرکدام یک فراخوانی مستقل
+pytest یا harness مشخص خود را دارند. `staging_gate.sh` باید exit code همان فراخوانی
+و نبود skip را بخواند؛ parse کردن متن لاگ معیار gate نیست. fixtureها با
+`RUN_INTEGRATION=1` و سرویس غایب fail می‌شوند، نه skip. نام تست، exit code و countهای
+sanitized در evidence ثبت می‌شوند.
+
 ## برنامهٔ PR2-A تا PR2-E
 
 ### PR2-A — integration واقعی PostgreSQL و Redis
@@ -59,8 +67,10 @@ PR متوقف و فقط گزارش sanitized ثبت می‌شود.
 
 - اثبات: `current_user`های جدا و رد `DELETE` با `SQLSTATE 42501` برای
   `credentials`، `sessions`، `mfa_credentials` و `approval_requests`؛ همچنین بررسی
-  کاتالوگی `has_table_privilege` ثابت کند runtime روی همهٔ جدول‌های schemaهای برنامه
-  `DELETE` و `TRUNCATE` ندارد و روی audit، `UPDATE` هم ندارد.
+  کاتالوگی با `has_table_privilege` برای **همهٔ جدول‌های schemaهای برنامه** ثابت کند
+  runtime روی هیچ جدول `DELETE` یا `TRUNCATE` ندارد و روی جدول‌های audit، `UPDATE` هم
+  ندارد. این catalog check باید با نام role runtime و فهرست واقعی `pg_class`/schemaها
+  انجام شود، نه با فهرست دستی چهار جدول.
 - مرز: probe SQL/psql و حداکثر دو تست integration؛ app و migration تغییر نمی‌کنند.
 - CI/gate: یک اجرای مستقل pytest/probe برای role؛ `P1-ROLE` از همان exit code و نبود skip
   تعیین شود و trigger rejection با privilege denial اشتباه نشود.
@@ -77,23 +87,43 @@ PR متوقف و فقط گزارش sanitized ثبت می‌شود.
   تعیین شود.
 - پذیرش: یک invocation، `attempts=1`، reclaim قابل مشاهده و بدون duplicate.
 - توقف/خطر: `reclaim_stuck()` مالکیت lease را نمی‌سنجد و worker قدیمی ممکن است نتیجهٔ
-  جدید را overwrite کند؛ فقط محدودیت/باگ ثبت شود و PR متوقف بماند.
+  جدید را overwrite کند؛ این همان `SEC-004` است. در این PR فقط محدودیت مستند شود و
+  PR متوقف بماند؛ اصلاح app/schema به `PR2-F` یا تصمیم جدا منتقل می‌شود.
 
 ### PR2-E — restore با pg_dump/pg_restore
 
-- اثبات: logical round-trip روی PostgreSQL 16 با dump custom، DB مقصد جدا، checksum،
-  row count/digest و head=`0007`.
+- اثبات: logical round-trip روی PostgreSQL 16 با dump customِ بدون رمزنگاری روی دادهٔ
+  ساختگی، DB مقصد جدا، checksum، row count/digest و head=`0007`؛ dump در cleanup حذف
+  می‌شود و upload نمی‌شود. این scope encrypted backup و PITR را شامل نمی‌کند؛ encryption
+  backup production در `WP-8` است.
 - مرز: بدون تغییر app/migration؛ script/CI/runbook ممکن است در PR این بسته تغییر کند.
   `pg_dump` و `pg_restore` باید version-check و در صورت نیاز pinned install شوند.
 - CI/gate: یک اجرای مستقل restore؛ `P1-RESTORE` فقط از exit code و digest/row-count
   verification تعیین شود.
-- پذیرش: restore exit=0، source/target برابر، cleanup موفق و هیچ dump/key در artifact.
+- پذیرش: restore exit=0، source/target برابر، cleanup موفق و هیچ dump در artifact یا
+  upload؛ رمزنگاری و PITR شرط این gate نیستند.
 - توقف/خطر: نبود ابزار، target DB نامطمئن یا checksum mismatch؛ `BLOCKED` و گزارش
-  sanitized. این برنامه هنوز PITR یا backup encrypted production را ثابت نمی‌کند.
+  sanitized.
+
+## اجرای محلی تست‌های integration با Docker
+
+- این مسیر فقط تمرین محلی است؛ شاهد نهایی فقط CI لینوکسی GitHub است.
+- ابتدا فقط‌خوانی اجرا کنید: `docker --version`. در این workspace Docker در دسترس است؛
+  در این شاخه هنوز هیچ container یا تستی اجرا نشده است.
+- PostgreSQL 16 و Redis 7 را فقط روی `127.0.0.1` publish کنید؛ port را روی public
+  interface باز نکنید.
+- passwordها در هر shell/run تصادفی ساخته شوند و فقط در environment همان shell بمانند؛
+  آن‌ها را در `.env`، فایل موقت، log یا commit ننویسید.
+- فقط database، key و payload کاملاً ساختگی استفاده شود؛ credential یا دادهٔ واقعی ممنوع است.
+- بعد از کار، containerها و volumeهای disposable را حتی پس از failure پاک کنید؛ dump/key
+  محلی را نیز حذف کنید.
+- اگر Docker، image، ابزار client یا سرویس در دسترس نبود، تست را skip نکنید؛ محدودیت را
+  گزارش و gate را `BLOCKED` نگه دارید.
 
 ## ترتیب و شرط موفقیت
 
-ترتیب پیشنهادی: `PR2-A`، `PR2-B`، `PR2-C`، `PR2-D`، `PR2-E`. هر بسته مستقل review
+ترتیب پیشنهادی: `PR2-A`، `PR2-B`، `PR2-C`، `PR2-D`، `PR2-E`. `PR2-F` برای اثبات
+admin غیر-superuser بعد از `PR2-E` و پس از تصمیم طراحی جدا شروع می‌شود. هر بسته مستقل review
 می‌شود و merge آن فقط همان gate را به‌روزرسانی می‌کند. Phase 1 فقط وقتی از `PARTIAL`
 خارج می‌شود که هر پنج گروه، بدون skip، در CI لینوکسی GitHub اجرا شوند، exit code صفر
 داشته باشند، evidence sanitized و reviewer مستقل داشته باشند؛ PASS محلی تمرین است و
