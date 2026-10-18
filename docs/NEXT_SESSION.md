@@ -17,7 +17,12 @@ PR متوقف و فقط گزارش sanitized ثبت می‌شود.
 4. `tests/integration/README.md` — قرارداد تست‌های واقعی.
 5. `.github/workflows/ci.yml` و `scripts/staging_gate.sh` — سطح CI و gate فعلی.
 6. `task_plan.md` — بدهی‌های PR2 و موانع release.
-7. `docs/archive/STG-001-PR1-plan.md` — تاریخچهٔ PR1، فقط برای traceability.
+
+## فقط اگر تاریخچه یا جزئیات هر گاف لازم است
+
+- `docs/archive/STG-001-PR1-plan.md` — تاریخچهٔ STEP-000 و برنامهٔ اجرایی PR1.
+- `docs/archive/PR2-gap-analysis-v1.md` — نسخهٔ تحلیلی اولیهٔ گاف‌ها با نام فایل‌ها،
+  خطوط کد و شکل نتیجهٔ موفق؛ در تعارض، همین `NEXT_SESSION.md` برنده است.
 
 ## قواعد مشترک PR2
 
@@ -81,11 +86,13 @@ sanitized در evidence ثبت می‌شوند.
 
 - اثبات: دو `run_once()` برای یک event synthetic فقط یک claim و یک invocation بدهند؛
   row به `delivered` برسد و delivery قدیمی از `delivering` به `pending` reclaim شود.
-- مرز: handler محلیِ فقط‌برای‌تست مجاز است؛ `HANDLERS` تولیدی خالی است و PASS فقط
-  semantics claim/lease/reclaim را ثابت می‌کند، نه handler تولیدی.
+- Scope: `claim/lease/reclaim semantics؛ مالکیت lease سنجیده نشده (SEC-004)؛ بدون handler تولیدی`.
+  handler محلیِ فقط‌برای‌تست مجاز است؛ `HANDLERS` تولیدی خالی است و PASS فقط همین
+  semantics را ثابت می‌کند، نه handler تولیدی.
 - CI/gate: یک اجرای مستقل pytest برای outbox؛ `P1-REDIS-WORKERS` از exit code و نبود skip
   تعیین شود.
-- پذیرش: یک invocation، `attempts=1`، reclaim قابل مشاهده و بدون duplicate.
+- پذیرش: دو تست primitive در صورت پاس شدن قابل merge‌اند؛ یک invocation، `attempts=1`،
+  reclaim قابل مشاهده و بدون duplicate.
 - توقف/خطر: `reclaim_stuck()` مالکیت lease را نمی‌سنجد و worker قدیمی ممکن است نتیجهٔ
   جدید را overwrite کند؛ این همان `SEC-004` است. در این PR فقط محدودیت مستند شود و
   PR متوقف بماند؛ اصلاح app/schema به `PR2-F` یا تصمیم جدا منتقل می‌شود.
@@ -127,7 +134,9 @@ admin غیر-superuser بعد از `PR2-E` و پس از تصمیم طراحی ج
 می‌شود و merge آن فقط همان gate را به‌روزرسانی می‌کند. Phase 1 فقط وقتی از `PARTIAL`
 خارج می‌شود که هر پنج گروه، بدون skip، در CI لینوکسی GitHub اجرا شوند، exit code صفر
 داشته باشند، evidence sanitized و reviewer مستقل داشته باشند؛ PASS محلی تمرین است و
-شاهد نهایی محسوب نمی‌شود.
+شاهد نهایی محسوب نمی‌شود. `SEC-004` به‌عنوان محدودیت شناخته‌شده، برای هر provider واقعی
+یک مانع باز باقی می‌ماند و تا طراحی/رفع مالکیت lease، خروج Phase 1 برای provider واقعی
+کامل محسوب نمی‌شود.
 
 ## قدم بعدی رسمی
 
