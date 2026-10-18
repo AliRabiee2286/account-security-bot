@@ -1,8 +1,8 @@
 # دستور جلسه بعد — PR2 پس از ادغام STG-001 PR1
 
-**اولین کار جلسه بعد:** از شاخهٔ `main` آخرین وضعیت را بگیرید، این سند را به‌عنوان
-منبع حقیقت بخوانید و فقط یکی از بسته‌های PR2 را طبق ترتیب زیر شروع کنید. PR1 با merge
-commit `cdabbc6` ادغام شده و run #5 نتیجهٔ `PARTIAL` دارد.
+**اولین کار جلسه بعد:** PR2-A روی `stg-001-pr2a-connectivity` را بازبینی و evidence
+اجرای مستقل connectivity در CI لینوکسی GitHub را ثبت کنید؛ push و PR با صاحب پروژه است.
+تمرین محلی PASS شده، اما run جدید CI هنوز انجام نشده و Phase 1 همچنان `PARTIAL` است.
 
 این سند برنامهٔ جاری PR2 است. تاریخچهٔ STEP-000 و برنامهٔ اجرایی PR1 در
 `docs/archive/STG-001-PR1-plan.md` نگهداری می‌شود. در اجرای PR2، کد، migration و
@@ -56,6 +56,9 @@ sanitized در evidence ثبت می‌شوند.
 - CI/gate: اجرای مستقل pytest برای connectivity؛ `P1-INTEGRATION` فقط با exit code صفر
   و صفر skip PASS شود.
 - پذیرش: دو round-trip واقعی، بدون mock/skip، خروجی sanitized.
+- وضعیت: پیاده‌سازی و Docker محلی PASS؛ گروه اتصال 3 passed و full enabled suite برابر
+  80 passed، هر دو بدون skip. PostgreSQL rollback، Redis delete و cleanup containerها
+  تأیید شدند؛ evidence نهایی Linux CI برای کد جدید هنوز pending است.
 - توقف/خطر: timeout، permission یا اتصال ناموفق؛ سرویس و exception type گزارش و PR
   متوقف شود.
 
@@ -116,7 +119,7 @@ sanitized در evidence ثبت می‌شوند.
 
 - این مسیر فقط تمرین محلی است؛ شاهد نهایی فقط CI لینوکسی GitHub است.
 - ابتدا فقط‌خوانی اجرا کنید: `docker --version`. در این workspace Docker در دسترس است؛
-  در این شاخه هنوز هیچ container یا تستی اجرا نشده است.
+  تمرین محلی PR2-A اجرا و هر دو container و volumeهای موقت پس از کار حذف شدند.
 - PostgreSQL 16 و Redis 7 را فقط روی `127.0.0.1` publish کنید؛ port را روی public
   interface باز نکنید.
 - passwordها در هر shell/run تصادفی ساخته شوند و فقط در environment همان shell بمانند؛
@@ -140,5 +143,5 @@ admin غیر-superuser بعد از `PR2-E` و پس از تصمیم طراحی ج
 
 ## قدم بعدی رسمی
 
-**`PR2-A — integration harness واقعی PostgreSQL و Redis`**؛ فقط برنامه‌ریزی‌شده، نه
-اجراشده. قبل از شروع، تغییرات مجاز همان PR و دسترسی سرویس disposable را تأیید کنید.
+**`PR2-A — بازبینی تغییرات اتصال واقعی و ثبت evidence در CI لینوکسی GitHub`**؛
+پس از بازبینی صاحب پروژه push/PR انجام می‌شود. تا ثبت نتیجهٔ واقعی CI، PR2-B شروع نشود.
