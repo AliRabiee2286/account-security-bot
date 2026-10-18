@@ -68,7 +68,7 @@ write_summary() {
       printf '| P1-SECURITY | %s | independent two-reviewer runtime review |\n' "$P1_SECURITY_STATUS"
       printf '| P1-DB | %s | empty database migration and head check |\n' "$P1_DB_STATUS"
       printf '| P1-ROLE | %s | audit.audit_events DELETE only |\n' "$P1_ROLE_STATUS"
-      printf '| P1-INTEGRATION | %s | env-presence contract only; no DB/Redis connection |\n' "$P1_INTEGRATION_STATUS"
+      printf '| P1-INTEGRATION | %s | real PostgreSQL + Redis round-trip |\n' "$P1_INTEGRATION_STATUS"
       printf '| P1-WEBHOOK-GUARD | %s | function-level, no HTTP |\n' "$P1_WEBHOOK_GUARD_STATUS"
       printf '| P1-WEBHOOK-DELIVERY | %s | real Telegram delivery; synthetic token only loads Settings; no Telegram contact; outside PR1 |\n' "$P1_WEBHOOK_DELIVERY_STATUS"
       printf '| P1-RACE | %s | concurrent form consume; test absent in PR1 |\n' "$P1_RACE_STATUS"
@@ -251,29 +251,63 @@ else
 fi
 rm -f "$delete_probe"
 
-echo '== integration contract =='
-integration_output="$(mktemp)"
-if RUN_INTEGRATION=1 uv run pytest -q -rs tests/integration >"$integration_output" 2>&1; then
-  integration_status=0
+echo '== real PostgreSQL + Redis round-trip =='
+if (
+  connectivity_output=
+  connectivity_junit=
+  trap 'rm -f -- "$connectivity_output" "$connectivity_junit" >/dev/null 2>&1' EXIT
+  trap 'exit 1' HUP INT TERM
+  connectivity_output="$(mktemp 2>/dev/null)" || exit 1
+  connectivity_junit="$(mktemp 2>/dev/null)" || exit 1
+  connectivity_status=0
+  RUN_INTEGRATION=1 uv run pytest -q --tb=no --show-capture=no \
+    --junitxml="$connectivity_junit" \
+    tests/integration/test_gate_contract.py tests/integration/test_runtime_connectivity.py \
+    >"$connectivity_output" 2>&1 || connectivity_status=$?
+  uv run python - "$connectivity_junit" >>"$connectivity_output" 2>&1 <<'PY'
+import sys
+import xml.etree.ElementTree as ET
+
+try:
+    root = ET.parse(sys.argv[1]).getroot()
+    suites = [root] if root.tag == "testsuite" else root.findall("testsuite")
+    if root.tag not in {"testsuite", "testsuites"} or not suites:
+        raise ValueError
+    if len(list(root.iter("testsuite"))) != len(suites):
+        raise ValueError
+    tests = 0
+    for suite in suites:
+        counts = {key: int(suite.attrib[key]) for key in ("tests", "skipped", "errors", "failures")}
+        cases = suite.findall("testcase")
+        if counts["tests"] != len(cases) or any(counts[key] != 0 for key in ("skipped", "errors", "failures")):
+            raise ValueError
+        if any(not case.get("name") or not case.get("classname") for case in cases):
+            raise ValueError
+        tests += counts["tests"]
+    if tests < 3 or len(list(root.iter("testcase"))) != tests:
+        raise ValueError
+    if any(list(root.iter(tag)) for tag in ("skipped", "error", "failure")):
+        raise ValueError
+    if root.tag == "testsuites":
+        for key, expected in (("tests", tests), ("skipped", 0), ("errors", 0), ("failures", 0)):
+            if key in root.attrib and int(root.attrib[key]) != expected:
+                raise ValueError
+except (OSError, ET.ParseError, KeyError, ValueError):
+    raise SystemExit(1)
+PY
+  report_status=$?
+  [[ "$report_status" -eq 0 ]] || exit 1
+  exit "$connectivity_status"
+)
+then
+  P1_INTEGRATION_STATUS=PASS
+  echo 'P1-INTEGRATION=PASS scope=real PostgreSQL + Redis round-trip; independent pytest; tests>=3; skipped=0; errors=0; failures=0'
 else
-  integration_status=$?
-fi
-redact_file "$integration_output"
-if [[ "$integration_status" -ne 0 ]]; then
-  echo 'P1-INTEGRATION=FAIL scope=env-presence contract only; no DB/Redis connection; pytest returned a non-zero status' >&2
-  rm -f "$integration_output"
+  connectivity_status=$?
   P1_INTEGRATION_STATUS=FAIL
-  exit "$integration_status"
+  echo 'P1-INTEGRATION=FAIL scope=real PostgreSQL + Redis round-trip; independent pytest or structured report check failed' >&2
+  exit "$connectivity_status"
 fi
-if grep -Eq '(^|[[:space:]])[1-9][0-9]* skipped([,[:space:]]|$)' "$integration_output"; then
-  echo 'P1-INTEGRATION=FAIL scope=env-presence contract only; no DB/Redis connection; at least one test was skipped' >&2
-  rm -f "$integration_output"
-  P1_INTEGRATION_STATUS=FAIL
-  exit 1
-fi
-rm -f "$integration_output"
-P1_INTEGRATION_STATUS=PASS
-echo 'P1-INTEGRATION=PASS scope=env-presence contract only; no DB/Redis connection; no tests skipped'
 
 echo '== synthetic webhook guard =='
 uv run python - <<'PY'
