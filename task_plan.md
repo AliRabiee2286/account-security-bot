@@ -36,6 +36,7 @@
 | SEC-002 | **Non-superuser migration proof**: اجرای migration و role probe با نقش admin غیر-superuser تکرار و اثبات شود؛ run #5 فقط admin superuser را پوشش داد. | `P1 — release-blocking` | runner disposable، role provisioning و policy دسترسی PostgreSQL. | `NOT_STARTED`؛ فقط برای برنامه‌ریزی PR2 ثبت شد و اجرا نمی‌شود. |
 | SEC-003 | **Sensitive-table role coverage**: `P1-ROLE` برای `credentials`، `sessions`، `mfa_credentials` و `approval_requests` نیز probe حذف/دسترسی انجام دهد. | `P1 — release-blocking` | migration کامل روی DB disposable و probeهای جداگانهٔ privilege. | `NOT_STARTED`؛ فقط برای برنامه‌ریزی PR2 ثبت شد و اجرا نمی‌شود. |
 | INT-001 | **Real DB/Redis integration**: integration testها باید اتصال واقعی به PostgreSQL و Redis disposable و رفتار واقعی را بررسی کنند؛ env-presence contract به‌تنهایی کافی نیست. | `P1 — release-blocking` | fixtureهای integration، migration head و service health در CI. | `NOT_STARTED`؛ فقط برای برنامه‌ریزی PR2 ثبت شد و اجرا نمی‌شود. |
+| SEC-004 | **Outbox lease ownership**: `reclaim_stuck()` فقط بر اساس سن row آن را requeue می‌کند و `mark_delivered`/`mark_failed` مالکیت lease را بررسی نمی‌کنند؛ worker قدیمی ممکن است نتیجهٔ worker جدید را overwrite کند یا عملیات را دوباره انجام دهد. | `P1 — release-blocking` | طراحی lease/worker ownership و تصمیم دربارهٔ تغییر app/schema؛ قبل از هر provider واقعی. | `NOT_STARTED`؛ در `PR2-D` فقط محدودیت مستند می‌شود و اجرا/اصلاح نمی‌شود. |
 
 ## ترتیب و قواعد اجرا
 

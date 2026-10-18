@@ -215,6 +215,29 @@ integration، `RUN_INTEGRATION=1`، race/reclaim، restore و cleanup اضافه
   همین خطای اجرای اولیه مجاز است. از این پس هر migration که روی database واقعی اعمال شده
   باشد ویرایش نمی‌شود؛ اصلاح فقط با ساخت migration جدید انجام خواهد شد.
 
+## تصمیم‌های PR2 پس از ادغام PR1
+
+### P1-REDIS-WORKERS — مرز evidence برای worker
+
+- برای gate `P1-REDIS-WORKERS`، اجرای `run_once()` با handler فقط‌برای‌تست کافی است؛
+  این تست semantics مربوط به **claim/lease/reclaim** را اثبات می‌کند.
+- Scope این تصمیم: `claim/lease/reclaim semantics؛ بدون handler تولیدی`. خالی بودن
+  `HANDLERS` در worker تولیدی باقی می‌ماند و این gate نباید delivery به provider یا
+  رفتار handler تولیدی را PASS اعلام کند.
+
+### P1-RESTORE — محدودهٔ restore در CI
+
+- برای CI، dump روی دادهٔ کاملاً ساختگی می‌تواند بدون رمزنگاری ایجاد شود، در همان run
+  restore شود، در cleanup حذف شود و هرگز upload نشود.
+- Scope این تصمیم: **logical round-trip، نه encrypted و نه PITR**. رمزنگاری backup
+  production و بازیابی کلید به `WP-8` منتقل می‌شود و شرط PASS این gate نیست.
+
+### SEC-002 — زمان‌بندی اثبات migration با admin غیر-superuser
+
+- اثبات نقش migration غیر-superuser بعد از `PR2-E` به‌صورت `PR2-F` انجام می‌شود.
+- `PR2-F` به یک تصمیم طراحی جدا دربارهٔ privilege حداقلی و provisioning اولیه نیاز
+  دارد؛ تا آن زمان محدودیت superuser بودن run #5 باید در evidence باقی بماند.
+
 ## تصمیم‌هایی که فقط صاحب پروژه می‌تواند بگیرد
 
 - تأیید داشتن حساب Developer X، هزینه/credit، سقف مصرف و دسترسی API برای حساب آزمایشی.
