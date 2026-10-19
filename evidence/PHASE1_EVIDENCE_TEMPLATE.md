@@ -15,7 +15,7 @@ Offline/static PASS is informative and does not close Phase 1.
 | P1-DB | `alembic upgrade head` from empty DB | BLOCKED | | |
 | P1-REDIS | two-worker outbox + stuck reclaim | BLOCKED | | |
 | P1-CI | uv sync, ruff, mypy, import-linter, pytest | BLOCKED | | |
-| P1-RACE | concurrent form consume, exactly one winner | BLOCKED | | |
+| P1-RACE | 20 concurrent pairs + replay/expiry; PostgreSQL; no HTTP | BLOCKED (Linux CI/review pending; local PASS below) | | |
 | P1-WEBHOOK | invalid secret 403, valid secret 200 | BLOCKED | | |
 | P1-RESTORE | encrypted backup restore and checksum | BLOCKED | | |
 | P1-SECURITY | review S-011..S-022 applicable controls | BLOCKED | | |
@@ -43,7 +43,9 @@ No production credentials or real employee data may be used for this run.
 Branch: `stg-001-pr2a-connectivity`, based on `main` at `4974554`.
 Implementation commit: `2302a0a` (connectivity tests and gate).
 This is local Docker evidence only; no new CI run number, CI URL, or reviewer approval is claimed.
-The final `P1-INTEGRATION` evidence still requires the Linux GitHub CI run for this implementation.
+At the time of that rehearsal, Linux CI evidence was pending. PR2-A has since merged as
+`3700466` ([PR #3](https://github.com/AliRabiee2286/account-security-bot/pull/3)); this session
+confirmed the merge with `git pull --ff-only origin main`, but collected no additional CI receipt.
 
 | Local check | Result | Counts / scope |
 |---|---|---|
@@ -61,3 +63,65 @@ The final `P1-INTEGRATION` evidence still requires the Linux GitHub CI run for t
 The gate uses an independent pytest exit code and JUnit counts, not console-log parsing.
 The local run made no Telegram/provider contact and did not change `app/`, migrations, or workflow.
 Phase 1 remains `PARTIAL`; this rehearsal does not close the other blocked gates or `SEC-004`.
+
+## PR2-B local verification — 2026-10-19, Asia/Tehran
+
+Branch: `stg-001-pr2b-race`, created after `git pull --ff-only origin main` at `3700466`.
+Implementation commit: `804224e` (`test: add one-time form race integration gate`).
+These are local Docker results, not a GitHub Actions run or independent reviewer approval.
+No push, product changes, migration changes, or workflow changes were made for this package.
+
+| Local check | Result | Counts / scope |
+|---|---|---|
+| Disposable services and migration | PASS | PostgreSQL 16 + Redis 7; authenticated TCP; loopback-only ports; random in-memory/process-environment passwords; head `0007`; admin superuser, runtime non-superuser |
+| Connectivity, independent pytest | PASS | `tests=3 skipped=0 errors=0 failures=0`, exit 0; original files and `P1-INTEGRATION` scope unchanged |
+| Race/replay/expiry, independent pytest | PASS | `tests=2 skipped=0 errors=0 failures=0`, exit 0 |
+| Concurrent pairs | PASS | 20 fresh forms; 20 winners + 20 losers; exactly one each per pair; distinct backend PIDs and actual runtime role; 40 consumer commits; 20 non-NULL post-commit reads |
+| Replay and expiry | PASS | Initial consume committed; consumed replay and expired form rejected; expired row remains unconsumed |
+| Scoped admin cleanup | PASS | Runtime DELETE privilege is false; fixture deletes only registered hashes, commits and reads back zero; an unrelated synthetic sentinel row survived successful and failed runs |
+| Actual-test negative control | PASS (expected test failure) | External `consume_form` copy without `consumed_at IS NULL`: actual race test exit 1, `tests=1 skipped=0 errors=0 failures=1`, assertion `winners=2, losers=0` |
+| Original-code rerun after negative control | PASS | 2 passed, zero skips/errors/failures; 20 pairs again produced one winner each |
+| Full enabled pytest | PASS | 82 passed; zero skips/errors/failures |
+| Enabled missing-env / unavailable-service probes | PASS (expected setup errors) | Each invocation: `tests=2 skipped=0 errors=2 failures=0`, nonzero exit; no DSN/password emitted |
+| Complete staging gate | PASS (local executable gates) | Exit 0; integration and race each have pytest/XML exit 0; summary `PARTIAL`, 4 BLOCKED/NOT_RUN gates: SECURITY, WEBHOOK-DELIVERY, REDIS-WORKERS, RESTORE |
+| Staging gate under negative-control injection | PASS (expected gate failure) | Connectivity still exit 0 and 3 clean cases; race pytest/XML exit 1, `tests=2 skipped=0 errors=0 failures=2`; summary `FAIL`, `P1-RACE=FAIL` |
+| JUnit and runner boundaries | PASS | 16 validator scenarios, including valid reports, minimum counts, skip/error/failure, malformed/empty/nested/inconsistent reports; invalid helper inputs and `mktemp` failure rejected even inside `if` |
+| Ordinary `uv run pytest -q` | PASS (offline scope) | 77 passed, 5 skipped deliberately with integration disabled; not runtime evidence |
+| `uv run ruff check .` | PASS | No violations |
+| `uv run ruff format --check .` | PASS | 167 files already formatted |
+| `uv run mypy app` | PASS | 100 source files, no issues |
+| `bash -n scripts/staging_gate.sh`; `git diff --check` | PASS | Shell syntax and whitespace clean |
+| Final cleanup | PASS | Synthetic forms zero after scoped sentinel removal; no verification containers remain; anonymous volumes removed; external mutation/plugin/harness files and temporary reports deleted |
+
+Successful group diagnostics:
+
+```text
+P1-INTEGRATION-DIAGNOSTIC=pytest_exit=0 xml_exit=0
+P1-INTEGRATION-XML tests=3 skipped=0 errors=0 failures=0
+P1-RACE-DIAGNOSTIC=pytest_exit=0 xml_exit=0
+P1-RACE-XML tests=2 skipped=0 errors=0 failures=0
+one-time-form race: pairs=20 winners=20 losers=20 consumed_after_commit=20
+```
+
+Reproduction commands, after disposable role provisioning and admin migration:
+
+```bash
+RUN_INTEGRATION=1 uv run pytest -q \
+  tests/integration/test_gate_contract.py tests/integration/test_runtime_connectivity.py
+RUN_INTEGRATION=1 uv run pytest -q tests/integration/test_one_time_form_race.py
+RUN_INTEGRATION=1 uv run pytest -q
+bash scripts/staging_gate.sh
+```
+
+On Windows, the local full gate used Git Bash explicitly and a disposable `psql` wrapper
+calling the PostgreSQL 16 container's TCP client. An initial Python subprocess selected WSL's
+`bash` and could not start it; correcting the external runner path required no repository fix.
+The negative control injected only the external consume copy, not a modified `app/` file.
+Its two-winner result is intentional; the original primitive never produced multiple winners
+in these runs. If it does, stop and report `app/core/one_time_form_store.py:61-78` instead of
+patching product code or schema in PR2-B.
+
+`P1-RACE` scope: **one-time form consume; 20 concurrent pairs, exactly one winner each;
+PostgreSQL; no HTTP**. This is not HTTP/CSRF/authorization/encryption evidence. Linux CI
+for PR2-B and independent review remain pending; Phase 1 is still `PARTIAL` and Phase 2
+is still `BLOCKED`. `P1-REDIS-WORKERS`, `P1-RESTORE`, and `SEC-004` are not closed.

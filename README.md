@@ -54,14 +54,37 @@ tests/               # unit and integration tests
 
 The offline foundation gate is green: the project has a checked-in `uv.lock`, strict typing,
 Ruff, import boundaries, unit tests, import smoke, migration/static validators, and offline
-security smoke. This does **not** make the project production-ready. Phase 1 remains
-**blocked/pre-staging** until an environment with Docker/Compose, PostgreSQL 16, Redis 7 and
-the test Telegram bot produces runtime evidence for empty-database migration, two-worker
-concurrency, webhook smoke, backup restore, CI and two-person security review.
+security smoke. This does **not** make the project production-ready. Phase 1 is **PARTIAL**
+(see `docs/STATUS.md`). PR2-A is merged into `main` at `3700466`. PR2-B adds locally verified
+one-time-form races; its Linux CI evidence and independent review are still pending. Real
+Telegram delivery, two-worker outbox/reclaim, restore, and two-person security review remain
+open; local PASS does not close the release gate.
 
 Run the complete environment gate only from `docs/STAGING_RUNBOOK.md`. Runtime uses
 `DATABASE_URL` with the least-privileged `sentinel_app` role; Alembic uses the separate
 privileged `MIGRATION_DATABASE_URL`.
+
+### One-time-form race gate (PR2-B)
+
+After provisioning disposable services and migrating as admin, run the groups independently:
+
+```bash
+RUN_INTEGRATION=1 uv run pytest -q \
+  tests/integration/test_gate_contract.py tests/integration/test_runtime_connectivity.py
+RUN_INTEGRATION=1 uv run pytest -q tests/integration/test_one_time_form_race.py
+```
+
+The race test executes 20 concurrent pairs, each with a fresh synthetic form. Both runtime
+transactions commit on distinct PostgreSQL backend connections; every pair must have exactly
+one winner and one loser, with committed `consumed_at` set. The second test rejects replay and
+expired forms. Admin cleanup deletes only that test's registered hashes and verifies no rows
+remain; runtime DELETE is intentionally forbidden.
+
+Local evidence: connectivity **3 passed**, race **2 passed**, full enabled suite **82 passed**,
+all with zero skips. A temporary unguarded consume copy made the actual race test fail with
+two winners; the copy was deleted and is not committed. Scope is PostgreSQL storage only,
+not HTTP, CSRF, authorization, encryption, or end-to-end delivery. See
+`tests/integration/README.md` and `evidence/PHASE1_EVIDENCE_TEMPLATE.md` for details.
 
 ## Authentication gate
 
