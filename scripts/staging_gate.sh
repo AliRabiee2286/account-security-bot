@@ -18,7 +18,7 @@ P1_ROLE_STATUS=NOT_RUN
 P1_INTEGRATION_STATUS=NOT_RUN
 P1_WEBHOOK_GUARD_STATUS=NOT_RUN
 P1_WEBHOOK_DELIVERY_STATUS=BLOCKED
-P1_RACE_STATUS=BLOCKED
+P1_RACE_STATUS=NOT_RUN
 P1_REDIS_WORKERS_STATUS=BLOCKED
 P1_RESTORE_STATUS=BLOCKED
 
@@ -31,26 +31,118 @@ redact_file() {
     "$1"
 }
 
-print_connectivity_diagnostic() {
-  local pytest_status="$1"
-  local report_status="$2"
-  local connectivity_output="$3"
-  local connectivity_summary="$4"
-  printf 'P1-INTEGRATION-DIAGNOSTIC=pytest_exit=%s xml_exit=%s\n' \
-    "$pytest_status" "$report_status"
-  if [[ -s "$connectivity_summary" ]]; then
-    redact_file "$connectivity_summary"
+print_pytest_diagnostic() {
+  local group_name="$1"
+  local pytest_status="$2"
+  local report_status="$3"
+  local pytest_output="$4"
+  local junit_summary="$5"
+  printf '%s-DIAGNOSTIC=pytest_exit=%s xml_exit=%s\n' \
+    "$group_name" "$pytest_status" "$report_status"
+  if [[ -s "$junit_summary" ]]; then
+    redact_file "$junit_summary"
   else
-    echo 'P1-INTEGRATION-XML tests=unknown skipped=unknown errors=unknown failures=unknown'
+    echo "$group_name-XML tests=unknown skipped=unknown errors=unknown failures=unknown"
   fi
-  echo 'P1-INTEGRATION-PYTEST-TAIL-BEGIN'
-  if [[ -s "$connectivity_output" ]]; then
-    redact_file "$connectivity_output" | tail -n 20
+  echo "$group_name-PYTEST-TAIL-BEGIN"
+  if [[ -s "$pytest_output" ]]; then
+    redact_file "$pytest_output" | tail -n 20
   else
     echo '<no pytest output>'
   fi
-  echo 'P1-INTEGRATION-PYTEST-TAIL-END'
+  echo "$group_name-PYTEST-TAIL-END"
 }
+
+run_pytest_group() (
+  if [[ "$#" -lt 3 ]]; then
+    echo 'run_pytest_group: requires a group label, minimum test count and test files' >&2
+    exit 1
+  fi
+  group_name="$1"
+  minimum_tests="$2"
+  shift 2
+  if [[ ! "$group_name" =~ ^[A-Z][A-Z0-9-]*$ || ! "$minimum_tests" =~ ^[1-9][0-9]*$ ]]; then
+    echo 'run_pytest_group: invalid group label or minimum test count' >&2
+    exit 1
+  fi
+  for test_file in "$@"; do
+    if [[ "$test_file" == -* || "$test_file" != *.py || ! -f "$test_file" ]]; then
+      echo "$group_name-DIAGNOSTIC=invalid or missing test file" >&2
+      exit 1
+    fi
+  done
+
+  pytest_output=""
+  junit_path=""
+  junit_summary=""
+  trap 'rm -f -- "$pytest_output" "$junit_path" "$junit_summary" >/dev/null 2>&1' EXIT
+  trap 'exit 1' HUP INT TERM
+  pytest_output="$(mktemp 2>/dev/null)" || exit 1
+  junit_path="$(mktemp 2>/dev/null)" || exit 1
+  junit_summary="$(mktemp 2>/dev/null)" || exit 1
+
+  pytest_status=0
+  RUN_INTEGRATION=1 uv run pytest -q -rfE --tb=no --show-capture=no \
+    --junitxml="$junit_path" "$@" >"$pytest_output" 2>&1 || pytest_status=$?
+
+  report_status=0
+  uv run python - "$junit_path" "$group_name" "$minimum_tests" >"$junit_summary" 2>/dev/null <<'PY' || report_status=$?
+import sys
+import xml.etree.ElementTree as ET
+
+
+def report_count(element, key):
+    value = element.attrib[key]
+    if not value.isascii() or not value.isdecimal():
+        raise ValueError
+    return int(value)
+
+
+try:
+    root = ET.parse(sys.argv[1]).getroot()
+    group_name = sys.argv[2]
+    minimum_tests = int(sys.argv[3])
+    suites = [root] if root.tag == "testsuite" else root.findall("testsuite")
+    if root.tag not in {"testsuite", "testsuites"} or not suites:
+        raise ValueError
+    if len(list(root.iter("testsuite"))) != len(suites):
+        raise ValueError
+    if len(list(root.iter("testsuites"))) != int(root.tag == "testsuites"):
+        raise ValueError
+    tests = skipped = errors = failures = 0
+    for suite in suites:
+        counts = {key: report_count(suite, key) for key in ("tests", "skipped", "errors", "failures")}
+        cases = suite.findall("testcase")
+        if counts["tests"] != len(cases):
+            raise ValueError
+        if any(not case.get("name", "").strip() or not case.get("classname", "").strip() for case in cases):
+            raise ValueError
+        tests += counts["tests"]
+        skipped += counts["skipped"]
+        errors += counts["errors"]
+        failures += counts["failures"]
+    print(f"{group_name}-XML tests={tests} skipped={skipped} errors={errors} failures={failures}")
+    if (
+        tests < minimum_tests
+        or len(list(root.iter("testcase"))) != tests
+        or any(count != 0 for count in (skipped, errors, failures))
+        or any(list(root.iter(tag)) for tag in ("skipped", "error", "failure"))
+    ):
+        raise SystemExit(1)
+    if root.tag == "testsuites":
+        for key, expected in (("tests", tests), ("skipped", 0), ("errors", 0), ("failures", 0)):
+            if key in root.attrib and report_count(root, key) != expected:
+                raise ValueError
+except (OSError, ET.ParseError, KeyError, ValueError, TypeError):
+    print(f"{sys.argv[2]}-XML tests=unknown skipped=unknown errors=unknown failures=unknown")
+    raise SystemExit(1)
+PY
+
+  print_pytest_diagnostic "$group_name" "$pytest_status" "$report_status" \
+    "$pytest_output" "$junit_summary"
+  [[ "$report_status" -eq 0 ]] || exit 1
+  exit "$pytest_status"
+)
 
 write_summary() {
   if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
@@ -95,7 +187,7 @@ write_summary() {
       printf '| P1-INTEGRATION | %s | real PostgreSQL + Redis round-trip |\n' "$P1_INTEGRATION_STATUS"
       printf '| P1-WEBHOOK-GUARD | %s | function-level, no HTTP |\n' "$P1_WEBHOOK_GUARD_STATUS"
       printf '| P1-WEBHOOK-DELIVERY | %s | real Telegram delivery; synthetic token only loads Settings; no Telegram contact; outside PR1 |\n' "$P1_WEBHOOK_DELIVERY_STATUS"
-      printf '| P1-RACE | %s | concurrent form consume; test absent in PR1 |\n' "$P1_RACE_STATUS"
+      printf '| P1-RACE | %s | one-time form consume; 20 concurrent pairs, exactly one winner each; PostgreSQL; no HTTP |\n' "$P1_RACE_STATUS"
       printf '| P1-REDIS-WORKERS | %s | two-worker outbox/reclaim; test absent in PR1 |\n' "$P1_REDIS_WORKERS_STATUS"
       printf '| P1-RESTORE | %s | backup/restore; test absent in PR1 |\n' "$P1_RESTORE_STATUS"
     } >> "$GITHUB_STEP_SUMMARY"
@@ -276,66 +368,8 @@ fi
 rm -f "$delete_probe"
 
 echo '== real PostgreSQL + Redis round-trip =='
-if (
-  connectivity_output=
-  connectivity_junit=
-  connectivity_summary=
-  trap 'rm -f -- "$connectivity_output" "$connectivity_junit" "$connectivity_summary" >/dev/null 2>&1' EXIT
-  trap 'exit 1' HUP INT TERM
-  connectivity_output="$(mktemp 2>/dev/null)" || exit 1
-  connectivity_junit="$(mktemp 2>/dev/null)" || exit 1
-  connectivity_summary="$(mktemp 2>/dev/null)" || exit 1
-  connectivity_status=0
-  RUN_INTEGRATION=1 uv run pytest -q -rfE --tb=no --show-capture=no \
-    --junitxml="$connectivity_junit" \
-    tests/integration/test_gate_contract.py tests/integration/test_runtime_connectivity.py \
-    >"$connectivity_output" 2>&1 || connectivity_status=$?
-  report_status=0
-  uv run python - "$connectivity_junit" >"$connectivity_summary" 2>/dev/null <<'PY' || report_status=$?
-import sys
-import xml.etree.ElementTree as ET
-
-try:
-    root = ET.parse(sys.argv[1]).getroot()
-    suites = [root] if root.tag == "testsuite" else root.findall("testsuite")
-    if root.tag not in {"testsuite", "testsuites"} or not suites:
-        raise ValueError
-    if len(list(root.iter("testsuite"))) != len(suites):
-        raise ValueError
-    tests = skipped = errors = failures = 0
-    for suite in suites:
-        counts = {key: int(suite.attrib[key]) for key in ("tests", "skipped", "errors", "failures")}
-        cases = suite.findall("testcase")
-        if counts["tests"] != len(cases):
-            raise ValueError
-        if any(not case.get("name") or not case.get("classname") for case in cases):
-            raise ValueError
-        tests += counts["tests"]
-        skipped += counts["skipped"]
-        errors += counts["errors"]
-        failures += counts["failures"]
-    print(f"P1-INTEGRATION-XML tests={tests} skipped={skipped} errors={errors} failures={failures}")
-    if (
-        tests < 3
-        or len(list(root.iter("testcase"))) != tests
-        or any(count != 0 for count in (skipped, errors, failures))
-        or any(list(root.iter(tag)) for tag in ("skipped", "error", "failure"))
-    ):
-        raise SystemExit(1)
-    if root.tag == "testsuites":
-        for key, expected in (("tests", tests), ("skipped", 0), ("errors", 0), ("failures", 0)):
-            if key in root.attrib and int(root.attrib[key]) != expected:
-                raise ValueError
-except (OSError, ET.ParseError, KeyError, ValueError, TypeError):
-    print("P1-INTEGRATION-XML tests=unknown skipped=unknown errors=unknown failures=unknown")
-    raise SystemExit(1)
-PY
-  print_connectivity_diagnostic "$connectivity_status" "$report_status" \
-    "$connectivity_output" "$connectivity_summary"
-  [[ "$report_status" -eq 0 ]] || exit 1
-  exit "$connectivity_status"
-)
-then
+if run_pytest_group P1-INTEGRATION 3 \
+  tests/integration/test_gate_contract.py tests/integration/test_runtime_connectivity.py; then
   P1_INTEGRATION_STATUS=PASS
   echo 'P1-INTEGRATION=PASS scope=real PostgreSQL + Redis round-trip; independent pytest; tests>=3; skipped=0; errors=0; failures=0'
 else
@@ -360,7 +394,16 @@ PY
 P1_WEBHOOK_GUARD_STATUS=PASS
 echo 'P1-WEBHOOK-DELIVERY=BLOCKED scope=real Telegram delivery; synthetic token is settings-load-only; no Telegram contact; outside PR1 and no real bot token'
 
+echo '== one-time form consume race =='
+if run_pytest_group P1-RACE 2 tests/integration/test_one_time_form_race.py; then
+  P1_RACE_STATUS=PASS
+  echo 'P1-RACE=PASS scope=one-time form consume; 20 concurrent pairs, exactly one winner each; PostgreSQL; no HTTP'
+else
+  race_status=$?
+  P1_RACE_STATUS=FAIL
+  echo 'P1-RACE=FAIL scope=one-time form consume; 20 concurrent pairs, exactly one winner each; PostgreSQL; no HTTP' >&2
+  exit "$race_status"
+fi
 echo '== scenario coverage not implemented in PR1 =='
-echo 'P1-RACE=BLOCKED no concurrent form-consume integration test exists in tests/'
 echo 'P1-REDIS-WORKERS=BLOCKED no two-worker outbox/reclaim integration test exists in tests/'
 echo 'P1-RESTORE=BLOCKED no restore integration test/evidence harness exists in tests/'
