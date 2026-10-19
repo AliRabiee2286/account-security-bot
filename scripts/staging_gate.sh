@@ -24,8 +24,32 @@ P1_RESTORE_STATUS=BLOCKED
 
 redact_file() {
   sed -E \
+    -e 's#postgresql\+asyncpg://[^[:space:]@]+@#postgresql+asyncpg://<redacted>@#g' \
+    -e 's#postgresql://[^[:space:]@]+@#postgresql://<redacted>@#g' \
+    -e 's#redis://[^[:space:]@]+@#redis://<redacted>@#g' \
     -e 's#([Pp][Aa][Ss][Ss][Ww][Oo][Rr][Dd]|[Tt][Oo][Kk][Ee][Nn]|[Ss][Ee][Cc][Rr][Ee][Tt])=[^[:space:]]+#\1=<redacted>#g' \
     "$1"
+}
+
+print_connectivity_diagnostic() {
+  local pytest_status="$1"
+  local report_status="$2"
+  local connectivity_output="$3"
+  local connectivity_summary="$4"
+  printf 'P1-INTEGRATION-DIAGNOSTIC=pytest_exit=%s xml_exit=%s\n' \
+    "$pytest_status" "$report_status"
+  if [[ -s "$connectivity_summary" ]]; then
+    redact_file "$connectivity_summary"
+  else
+    echo 'P1-INTEGRATION-XML tests=unknown skipped=unknown errors=unknown failures=unknown'
+  fi
+  echo 'P1-INTEGRATION-PYTEST-TAIL-BEGIN'
+  if [[ -s "$connectivity_output" ]]; then
+    redact_file "$connectivity_output" | tail -n 20
+  else
+    echo '<no pytest output>'
+  fi
+  echo 'P1-INTEGRATION-PYTEST-TAIL-END'
 }
 
 write_summary() {
@@ -58,7 +82,7 @@ write_summary() {
       result=FAIL
     fi
     {
-      printf '%s\n\n' '## PR1 staging gate'
+      printf '%s\n\n' '## STG-001 staging gate'
       printf 'Result: %s — %s gates BLOCKED/NOT_RUN\n\n' "$result" "$blocked_count"
       printf '%s\n' '| Gate | Result | Scope |'
       printf '%s\n' '|---|---|---|'
@@ -255,16 +279,19 @@ echo '== real PostgreSQL + Redis round-trip =='
 if (
   connectivity_output=
   connectivity_junit=
-  trap 'rm -f -- "$connectivity_output" "$connectivity_junit" >/dev/null 2>&1' EXIT
+  connectivity_summary=
+  trap 'rm -f -- "$connectivity_output" "$connectivity_junit" "$connectivity_summary" >/dev/null 2>&1' EXIT
   trap 'exit 1' HUP INT TERM
   connectivity_output="$(mktemp 2>/dev/null)" || exit 1
   connectivity_junit="$(mktemp 2>/dev/null)" || exit 1
+  connectivity_summary="$(mktemp 2>/dev/null)" || exit 1
   connectivity_status=0
-  RUN_INTEGRATION=1 uv run pytest -q --tb=no --show-capture=no \
+  RUN_INTEGRATION=1 uv run pytest -q -rfE --tb=no --show-capture=no \
     --junitxml="$connectivity_junit" \
     tests/integration/test_gate_contract.py tests/integration/test_runtime_connectivity.py \
     >"$connectivity_output" 2>&1 || connectivity_status=$?
-  uv run python - "$connectivity_junit" >>"$connectivity_output" 2>&1 <<'PY'
+  report_status=0
+  uv run python - "$connectivity_junit" >"$connectivity_summary" 2>/dev/null <<'PY' || report_status=$?
 import sys
 import xml.etree.ElementTree as ET
 
@@ -275,27 +302,36 @@ try:
         raise ValueError
     if len(list(root.iter("testsuite"))) != len(suites):
         raise ValueError
-    tests = 0
+    tests = skipped = errors = failures = 0
     for suite in suites:
         counts = {key: int(suite.attrib[key]) for key in ("tests", "skipped", "errors", "failures")}
         cases = suite.findall("testcase")
-        if counts["tests"] != len(cases) or any(counts[key] != 0 for key in ("skipped", "errors", "failures")):
+        if counts["tests"] != len(cases):
             raise ValueError
         if any(not case.get("name") or not case.get("classname") for case in cases):
             raise ValueError
         tests += counts["tests"]
-    if tests < 3 or len(list(root.iter("testcase"))) != tests:
-        raise ValueError
-    if any(list(root.iter(tag)) for tag in ("skipped", "error", "failure")):
-        raise ValueError
+        skipped += counts["skipped"]
+        errors += counts["errors"]
+        failures += counts["failures"]
+    print(f"P1-INTEGRATION-XML tests={tests} skipped={skipped} errors={errors} failures={failures}")
+    if (
+        tests < 3
+        or len(list(root.iter("testcase"))) != tests
+        or any(count != 0 for count in (skipped, errors, failures))
+        or any(list(root.iter(tag)) for tag in ("skipped", "error", "failure"))
+    ):
+        raise SystemExit(1)
     if root.tag == "testsuites":
         for key, expected in (("tests", tests), ("skipped", 0), ("errors", 0), ("failures", 0)):
             if key in root.attrib and int(root.attrib[key]) != expected:
                 raise ValueError
-except (OSError, ET.ParseError, KeyError, ValueError):
+except (OSError, ET.ParseError, KeyError, ValueError, TypeError):
+    print("P1-INTEGRATION-XML tests=unknown skipped=unknown errors=unknown failures=unknown")
     raise SystemExit(1)
 PY
-  report_status=$?
+  print_connectivity_diagnostic "$connectivity_status" "$report_status" \
+    "$connectivity_output" "$connectivity_summary"
   [[ "$report_status" -eq 0 ]] || exit 1
   exit "$connectivity_status"
 )
