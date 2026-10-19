@@ -1,4 +1,4 @@
-"""Placeholder contract for the staging gate. No fake pass: skipped until services are present."""
+"""Explicit environment contract for the real disposable integration gate."""
 
 import os
 
@@ -9,6 +9,8 @@ pytestmark = pytest.mark.skipif(
 )
 
 
-def test_integration_environment_is_explicit():
-    assert os.getenv("DATABASE_URL")
-    assert os.getenv("REDIS_URL")
+def test_integration_environment_is_explicit() -> None:
+    required = ("DATABASE_URL", "MIGRATION_DATABASE_URL", "REDIS_URL")
+    missing = [name for name in required if not os.getenv(name, "").strip()]
+    # Only names reach assertion introspection, never values from the environment.
+    assert not missing, "Missing integration environment: " + ", ".join(missing)

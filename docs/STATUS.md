@@ -1,7 +1,7 @@
 # وضعیت canonical پروژه
 
-**آخرین بازبینی:** ۱۷ اکتبر ۲۰۲۶، منطقه زمانی تهران؛ baseline در ۱۴ اکتبر پذیرفته شد
-**دامنه این به‌روزرسانی:** فقط مستندات؛ بدون تغییر کد، migration یا اجرای سرویس
+**آخرین بازبینی:** ۱۸ اکتبر ۲۰۲۶، منطقه زمانی تهران؛ baseline در ۱۴ اکتبر پذیرفته شد
+**دامنه این به‌روزرسانی:** PR2-A، تست اتصال و gate و تمرین Docker محلی؛ بدون تغییر `app/`، migration یا workflow
 
 این فایل تنها مرجع وضعیت جاری و تنها محل ثبت «قدم بعدی» رسمی است. وضعیت‌ها و قدم‌های
 قبلی در `task_plan.md`، `findings.md`، `progress.md` و Second Brain به‌عنوان تاریخچه
@@ -29,7 +29,7 @@
 | بنیاد offline/static | `VERIFIED` | lock، compile، unit test، Ruff، mypy، import boundary و validatorهای ثبت‌شده سبز هستند. |
 | CI workflow syntax | `VERIFIED` | run #5 با commit `a20c620` در GitHub Actions بارگذاری و کامل اجرا شد؛ پنج سناریوی خارج از پوشش همچنان `BLOCKED/NOT_RUN` هستند. |
 | migration chain روی DB خالی | `VERIFIED` | `alembic upgrade head` روی PostgreSQL 16 disposable موفق شد و `current=heads=0007` ثبت شد؛ محدودیت: نقش admin در CI، superuser بود و اثبات با admin غیر-superuser انجام نشده است. |
-| PostgreSQL/Redis و CI runtime | `PARTIAL` | health، role probe و integration قرارداد env سبز شدند؛ review امنیتی و integration واقعی DB/Redis و چهار سناریوی runtime دیگر هنوز evidence ندارند. |
+| PostgreSQL/Redis و CI runtime | `PARTIAL` | run #5 فقط env-presence را پوشش داد؛ PR2-A دو round-trip واقعی را محلی با Docker تأیید کرد (گروه: 3 passed، full enabled: 80 passed، صفر skip). evidence نهایی CI لینوکسی برای کد جدید هنوز موجود نیست. |
 | Telegram Mini App proof | `IMPLEMENTED_NOT_VERIFIED` | validator و route ثبت‌نام وجود دارد؛ deploy و smoke واقعی نداریم. |
 | registration/approval | `PARTIAL` | ثبت pending و اسکلت approval وجود دارد؛ زنجیره کامل session و MFA اثبات نشده است. |
 | session/auth resolver | `PARTIAL` | resolver و hash DB-backed وجود دارند؛ همه routeهای حساس هنوز به جریان نهایی وصل نیستند. |
@@ -49,18 +49,21 @@
   OFFLINE، DB با head=`0007`، ROLE، integration قرارداد env و WEBHOOK-GUARD. پنج مورد
   همچنان `BLOCKED/NOT_RUN` هستند: SECURITY review دومرحله‌ای، تحویل واقعی Telegram،
   race فرم، دو-worker Redis/outbox و restore.
+- PR2-A پیاده‌سازی و تمرین محلی شد؛ `P1-INTEGRATION` جدید با Scope
+  `real PostgreSQL + Redis round-trip` منتظر اجرای مستقل در CI لینوکسی است. PASS محلی
+  جایگزین CI نیست. `SEC-004` برای هر provider واقعی مانع باز باقی می‌ماند.
 - **Phase 2: `BLOCKED`** — WebAuthn واقعی، session issuance بعد از approval/MFA و Mini App
   deploy/integration هنوز انجام نشده‌اند.
 - `offline/static PASS` به‌تنهایی هیچ‌یک از این دو وضعیت را تغییر نمی‌دهد.
 
 ## تنها قدم بعدی رسمی
 
-**`PR2 — برنامه‌ریزی تست‌های گمشده و evidence تکمیلی`**
+**`PR2-A — بازبینی تغییرات اتصال واقعی و ثبت evidence در CI لینوکسی GitHub`**
 
-`STEP-000` و اجرای STG-001 تا سطح `PARTIAL` انجام شده‌اند. قدم بعدی فقط برنامه‌ریزی PR2
-برای تست‌های گمشده و evidence تکمیلی است؛ در این مرحله هیچ implementation، migration،
-workflow یا runtime test جدیدی اجرا نمی‌شود. هر اجرای بعدی باید با تأیید صریح صاحب پروژه،
-دادهٔ synthetic/disposable و evidence جداگانه انجام شود.
+PR2-A روی `stg-001-pr2a-connectivity` از `main` ساخته شد و تست‌های محلی با PostgreSQL 16
+و Redis 7 disposable موفق شدند. قدم رسمی فعلی فقط بازبینی PR2-A و گرفتن evidence CI
+برای همین بسته است؛ push و PR را صاحب پروژه انجام می‌دهد. تا آن زمان PR2-B شروع
+نمی‌شود و هیچ gate دیگر PASS اعلام نمی‌شود.
 
 ## ممنوعیت‌های این baseline
 
