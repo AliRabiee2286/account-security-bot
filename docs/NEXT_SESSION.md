@@ -1,10 +1,10 @@
-# دستور جلسه بعد — receipt لینوکسی و review برای PR2-C
+# دستور جلسه بعد — PR2-D، دو worker و reclaim برای outbox
 
-**اولین کار جلسه بعد:** commitهای PR2-C روی شاخهٔ `stg-001-pr2c-roles` را بازبینی کنید،
-push/PR را با صاحب پروژه انجام دهید و receipt Linux CI برای role privilege probe و catalog
-sweep را ثبت کنید؛ این جلسه push نمی‌کند.
-PR2-B در `main` با `59a9da2` ادغام شد و [Linux CI آن](https://github.com/AliRabiee2286/account-security-bot/actions/runs/39372008697)
-روی commit `63a94e7` سبز شد. Reviewer 1 صاحب پروژه است؛ reviewer مستقل PR2-B همچنان pending است.
+**اولین کار جلسه بعد:** روی شاخهٔ `stg-001-pr2d-outbox` تست مستقل claim/lease/reclaim را
+با handler محلی فقط‌برای‌تست اجرا و evidence sanitized ثبت کنید؛ push/PR با صاحب پروژه است.
+PR2-C در `main` با `57d7a85` ادغام شد و [Linux CI آن](https://github.com/AliRabiee2286/account-security-bot/actions/runs/39386598021)
+روی commit `554335d` سبز شد. Reviewer 1 صاحب پروژه است؛ reviewer مستقل PR2-C برای بسته‌شدن
+نهایی SEC-003 همچنان pending است.
 
 این سند برنامهٔ جاری PR2 است. تاریخچهٔ STEP-000 و برنامهٔ اجرایی PR1 در
 `docs/archive/STG-001-PR1-plan.md` نگهداری می‌شود. در اجرای PR2، کد، migration و
@@ -101,7 +101,7 @@ pytest exit=0 و JUnit معتبر با skipped/errors/failures=0 نیاز دار
   `app/core/one_time_form_store.py:61-78` و علت sanitized گزارش و PR متوقف بماند. دو winner
   در نسخهٔ عمداً معیوبِ کنترل منفی، انتظار تست است و باگ تازهٔ محصول محسوب نمی‌شود.
 
-### PR2-C — پوشش role روی جدول‌های حساس
+### PR2-C — پوشش role روی جدول‌های حساس — ادغام‌شده
 
 - اثبات: `current_user`های جدا و رد `DELETE` با `SQLSTATE 42501` برای
   `credentials`، `sessions`، `mfa_credentials` و `approval_requests`؛ همچنین بررسی
@@ -121,9 +121,11 @@ pytest exit=0 و JUnit معتبر با skipped/errors/failures=0 نیاز دار
   `42501` رد شدند، grantهای موقت DELETE/TRUNCATE کنترل منفی مورد انتظار را شکست دادند،
   trigger audit با `P0001` اشتباه به‌عنوان privilege denial پذیرفته نشد و اجرای restored دوباره
   2 passed شد. Complete staging gate exit=0 و `P1-ROLE=PASS` بود؛ overall همچنان `PARTIAL` است.
-- وضعیت بسته: **پیاده‌سازی و local evidence انجام‌شده؛ SEC-003 برای این scope verify شد**.
-  Linux CI، merge روی `main` و reviewer مستقل هنوز pending هستند؛ این وضعیت production-ready
-  یا non-superuser migration-admin proof (`SEC-002`) نیست.
+- وضعیت بسته: **در `main` ادغام‌شده؛ SEC-003 در Linux CI تأیید شد**. Commit ادغام `57d7a85`،
+  اجرای CI روی `554335d` و receipt `P1-ROLE-PRIVILEGES-XML tests=2 skipped=0 errors=0 failures=0`،
+  `P1-ROLE=PASS` و `Result: PARTIAL — 4 gates BLOCKED/NOT_RUN` ثبت شده است. بسته‌شدن نهایی
+  SEC-003 به review مستقل وابسته است؛ این وضعیت production-ready یا non-superuser
+  migration-admin proof (`SEC-002`) نیست.
 
 ### PR2-D — دو worker و reclaim برای outbox
 
@@ -139,6 +141,11 @@ pytest exit=0 و JUnit معتبر با skipped/errors/failures=0 نیاز دار
 - توقف/خطر: `reclaim_stuck()` مالکیت lease را نمی‌سنجد و worker قدیمی ممکن است نتیجهٔ
   جدید را overwrite کند؛ این همان `SEC-004` است. در این PR فقط محدودیت مستند شود و
   PR متوقف بماند؛ اصلاح app/schema به `PR2-F` یا تصمیم جدا منتقل می‌شود.
+- اجرای این بسته از source-level خواندن شروع می‌شود: `run_once(handlers)` با claim مبتنی بر
+  `FOR UPDATE SKIP LOCKED` و handler map محلی تست می‌شود؛ `HANDLERS` تولیدی دست‌نخورده و خالی
+  می‌ماند. اگر stale-worker آزمایش نشان دهد worker قدیمی بعد از reclaim می‌تواند نتیجهٔ worker
+  جدید را overwrite یا duplicate کند، فقط نتیجهٔ sanitized در `SEC-004` ثبت و PR متوقف می‌شود؛
+  `P1-REDIS-WORKERS` در آن حالت PASS نخواهد شد.
 
 ### PR2-E — restore با pg_dump/pg_restore
 

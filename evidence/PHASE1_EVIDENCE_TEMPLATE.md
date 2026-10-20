@@ -160,3 +160,19 @@ The role evidence is limited to PostgreSQL effective privileges. It does not clo
 non-superuser migration-admin gap (`SEC-002`), HTTP authorization/CSRF, encryption, provider
 delivery, independent review, or production readiness. The temporary negative controls were
 external to the repository and are not part of the commit.
+
+## PR2-C Linux CI receipt — merged
+
+PR2-C was merged into `main` at `57d7a85`. Linux CI passed on implementation commit `554335d`:
+[run #39386598021](https://github.com/AliRabiee2286/account-security-bot/actions/runs/39386598021).
+The CI receipt is runtime evidence for SEC-003; final closure remains pending independent review.
+
+| Linux CI result | Result | Counts / scope |
+|---|---|---|
+| `P1-ROLE-PRIVILEGES` | PASS | `P1-ROLE-PRIVILEGES-XML tests=2 skipped=0 errors=0 failures=0`; catalog and sensitive-table role checks passed |
+| `P1-ROLE` | PASS | Existing audit DELETE probe and role privilege group both passed |
+| Overall staging result | `PARTIAL` | `Result: PARTIAL — 4 gates BLOCKED/NOT_RUN` |
+
+Reviewer 1: project owner. Independent reviewer: pending. The next package is PR2-D; its
+scope remains claim/lease/reclaim semantics with a local test-only handler, without production
+handler activation, `app/` changes, or migration changes.

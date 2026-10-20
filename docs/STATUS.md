@@ -1,7 +1,7 @@
 # وضعیت canonical پروژه
 
 **آخرین بازبینی:** ۲۰ اکتبر ۲۰۲۶، منطقه زمانی تهران؛ baseline در ۱۴ اکتبر پذیرفته شد
-**دامنه این به‌روزرسانی:** ثبت اجرای محلی PR2-C پس از ادغام PR2-B؛ بدون تغییر `app/`، migration یا workflow
+**دامنه این به‌روزرسانی:** ثبت ادغام PR2-C و Linux CI آن؛ بدون تغییر `app/`، migration یا workflow
 
 این فایل تنها مرجع وضعیت جاری و تنها محل ثبت «قدم بعدی» رسمی است. وضعیت‌ها و قدم‌های
 قبلی در `task_plan.md`، `findings.md`، `progress.md` و Second Brain به‌عنوان تاریخچه
@@ -29,8 +29,8 @@
 | بنیاد offline/static | `VERIFIED` | lock، compile، unit test، Ruff، mypy، import boundary و validatorهای ثبت‌شده سبز هستند. |
 | CI workflow syntax | `VERIFIED` | run #5 با commit `a20c620` در GitHub Actions کامل اجرا شد؛ workflow در PR2-B تغییر نکرد. |
 | migration chain روی DB خالی | `VERIFIED` | `alembic upgrade head` روی PostgreSQL 16 disposable موفق شد و `current=heads=0007` ثبت شد؛ محدودیت: نقش admin در CI، superuser بود و اثبات با admin غیر-superuser انجام نشده است. |
-| runtime role privilege probe | `VERIFIED_LOCALLY` | PR2-C روی PostgreSQL 16 disposable: چهار DELETE با `42501` رد شدند؛ catalog شامل ۲۱ جدول در ۶ schema بود و violationهای table/schema/attribute/membership/database صفر بود؛ Linux CI و reviewer مستقل pending هستند. |
-| PostgreSQL/Redis و CI runtime | `PARTIAL` | PR2-A و PR2-B در `main` ادغام شدند (`3700466`, `59a9da2`). Linux CI برای PR2-B روی `63a94e7` سبز شد؛ reviewer مستقل هنوز pending است. |
+| runtime role privilege probe | `VERIFIED_IN_CI` | PR2-C در `main` با `57d7a85` ادغام شد؛ Linux CI روی `554335d`، run `39386598021`: چهار DELETE با `42501` رد شدند و catalog شامل ۲۱ جدول در ۶ schema با صفر violation بود؛ بسته‌شدن نهایی SEC-003 به review مستقل وابسته است. |
+| PostgreSQL/Redis و CI runtime | `PARTIAL` | PR2-A، PR2-B و PR2-C در `main` ادغام شده‌اند (`3700466`, `59a9da2`, `57d7a85`). Linux CI برای PR2-C روی `554335d` سبز شد؛ reviewer مستقل PR2-C هنوز pending است. |
 | Telegram Mini App proof | `IMPLEMENTED_NOT_VERIFIED` | validator و route ثبت‌نام وجود دارد؛ deploy و smoke واقعی نداریم. |
 | registration/approval | `PARTIAL` | ثبت pending و اسکلت approval وجود دارد؛ زنجیره کامل session و MFA اثبات نشده است. |
 | session/auth resolver | `PARTIAL` | resolver و hash DB-backed وجود دارند؛ همه routeهای حساس هنوز به جریان نهایی وصل نیستند. |
@@ -46,14 +46,13 @@
 
 ## وضعیت فازها
 
-- **Phase 1: `PARTIAL`** — PR2-A و PR2-B ادغام شده‌اند. PR2-B روی `main` با `59a9da2`
-  موجود است و Linux CI روی `63a94e7` PASS شد: `P1-RACE-XML tests=3 skipped=0 errors=0 failures=0`،
-  `P1-RACE=PASS` و `Result: PARTIAL — 4 gates BLOCKED/NOT_RUN`.
-- PR2-C روی شاخهٔ `stg-001-pr2c-roles` در commit `d12092d` به‌صورت محلی اجرا و verify شد.
-  `P1-ROLE-PRIVILEGES-XML tests=2 skipped=0 errors=0 failures=0` و `P1-ROLE=PASS` ثبت شد؛
-  catalog sweep همهٔ ۶ schema و ۲۱ جدول را پوشش داد، membership در `sentinel_app_role` و
-  محدودیت attributeها را بررسی کرد و هیچ violationی نداشت. این receipt محلی است و جای Linux CI
-  یا reviewer مستقل را نمی‌گیرد.
+- **Phase 1: `PARTIAL`** — PR2-A، PR2-B و PR2-C ادغام شده‌اند. PR2-C در `main` با
+  `57d7a85` موجود است و Linux CI روی `554335d`، run `39386598021`، PASS شد:
+  `P1-ROLE-PRIVILEGES-XML tests=2 skipped=0 errors=0 failures=0`، `P1-ROLE=PASS` و
+  `Result: PARTIAL — 4 gates BLOCKED/NOT_RUN`.
+- SEC-003 در Linux CI تأیید شد: catalog sweep همهٔ ۶ schema و ۲۱ جدول را پوشش داد، membership
+  در `sentinel_app_role` و محدودیت attributeها را بررسی کرد و هیچ violationی نداشت. بسته‌شدن
+  نهایی SEC-003 به review مستقل وابسته است؛ این receipt جای review را نمی‌گیرد.
 - در هر اجرای تست race، 20 فرم تازه با دو connection واقعی runtime و barrier مصرف شدند:
   20 winner، 20 loser و 20 مقدار non-NULL بعد از commit. overlap نیز lock واقعی را در
   `pg_stat_activity` دید؛ purpose mismatch، replay و expiry نیز رد شدند.
@@ -74,12 +73,13 @@
 
 ## تنها قدم بعدی رسمی
 
-**`PR2-C — بازبینی صاحب پروژه، push/merge و دریافت Linux CI برای role privilege probe`**
+**`PR2-D — دو worker و reclaim برای outbox`**
 
-PR2-B در `main` با `59a9da2` ادغام شده و [Linux CI آن](https://github.com/AliRabiee2286/account-security-bot/actions/runs/39372008697)
-روی `63a94e7` سبز است. Reviewer 1 صاحب پروژه است؛ reviewer مستقل pending است. قدم رسمی بعدی
-پس از اجرای محلی `d12092d`، بازبینی/push و receipt لینوکسی PR2-C است؛ push با صاحب پروژه است و
-این جلسه push نمی‌کند. بعد از receipt و review، `PR2-D` بستهٔ بعدی خواهد بود.
+PR2-C در `main` با `57d7a85` ادغام شده و [Linux CI آن](https://github.com/AliRabiee2286/account-security-bot/actions/runs/39386598021)
+روی `554335d` سبز است: `P1-ROLE-PRIVILEGES-XML tests=2 skipped=0 errors=0 failures=0`،
+`P1-ROLE=PASS` و `Result: PARTIAL — 4 gates BLOCKED/NOT_RUN`. SEC-003 در CI تأیید شده، اما
+بسته‌شدن نهایی آن به review مستقل وابسته است. اجرای PR2-D فقط با handler محلی تست انجام می‌شود؛
+`app/` و migrationها تغییر نمی‌کنند و SEC-004 همچنان یک محدودیت باز است.
 
 ## ممنوعیت‌های این baseline
 
