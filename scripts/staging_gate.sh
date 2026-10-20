@@ -15,12 +15,16 @@ P1_OFFLINE_STATUS=NOT_RUN
 P1_SECURITY_STATUS=BLOCKED
 P1_DB_STATUS=NOT_RUN
 P1_ROLE_STATUS=NOT_RUN
+P1_ROLE_AUDIT_STATUS=NOT_RUN
+P1_ROLE_PRIVILEGES_STATUS=NOT_RUN
 P1_INTEGRATION_STATUS=NOT_RUN
 P1_WEBHOOK_GUARD_STATUS=NOT_RUN
 P1_WEBHOOK_DELIVERY_STATUS=BLOCKED
 P1_RACE_STATUS=NOT_RUN
 P1_REDIS_WORKERS_STATUS=BLOCKED
 P1_RESTORE_STATUS=BLOCKED
+
+P1_ROLE_SCOPE='runtime role: DELETE denied (42501) on audit + 4 sensitive tables; catalog sweep over all app-schema tables: no DELETE/TRUNCATE, no UPDATE on audit; no CREATE on schemas; role attributes restricted'
 
 redact_file() {
   sed -E \
@@ -183,7 +187,7 @@ write_summary() {
       printf '| P1-OFFLINE | %s | static/offline quality checks |\n' "$P1_OFFLINE_STATUS"
       printf '| P1-SECURITY | %s | independent two-reviewer runtime review |\n' "$P1_SECURITY_STATUS"
       printf '| P1-DB | %s | empty database migration and head check |\n' "$P1_DB_STATUS"
-      printf '| P1-ROLE | %s | audit.audit_events DELETE only |\n' "$P1_ROLE_STATUS"
+      printf '| P1-ROLE | %s | %s |\n' "$P1_ROLE_STATUS" "$P1_ROLE_SCOPE"
       printf '| P1-INTEGRATION | %s | real PostgreSQL + Redis round-trip |\n' "$P1_INTEGRATION_STATUS"
       printf '| P1-WEBHOOK-GUARD | %s | function-level, no HTTP |\n' "$P1_WEBHOOK_GUARD_STATUS"
       printf '| P1-WEBHOOK-DELIVERY | %s | real Telegram delivery; synthetic token only loads Settings; no Telegram contact; outside PR1 |\n' "$P1_WEBHOOK_DELIVERY_STATUS"
@@ -350,7 +354,7 @@ if psql "$PSQL_RUNTIME_DSN" --no-psqlrc --set=ON_ERROR_STOP=1 --set=VERBOSITY=ve
   exit 1
 fi
 if grep -Eq '(^|[[:space:]])42501:' "$delete_probe" && grep -qi 'permission denied' "$delete_probe"; then
-  P1_ROLE_STATUS=PASS
+  P1_ROLE_AUDIT_STATUS=PASS
   echo 'P1-ROLE-DELETE=PASS scope=audit.audit_events DELETE only; runtime DELETE rejected with SQLSTATE 42501 permission denied'
 elif grep -qi 'append-only' "$delete_probe"; then
   echo 'P1-ROLE=FAIL DELETE was rejected by append-only trigger, not privilege SQLSTATE 42501' >&2
@@ -366,6 +370,29 @@ else
   exit 1
 fi
 rm -f "$delete_probe"
+
+echo '== runtime role privilege catalog =='
+if run_pytest_group P1-ROLE-PRIVILEGES 2 tests/integration/test_runtime_role_privileges.py; then
+  P1_ROLE_PRIVILEGES_STATUS=PASS
+else
+  role_privileges_status=$?
+  P1_ROLE_PRIVILEGES_STATUS=FAIL
+  P1_ROLE_STATUS=FAIL
+  echo "P1-ROLE=FAIL scope=$P1_ROLE_SCOPE" >&2
+  if [[ "$role_privileges_status" -eq 0 ]]; then
+    role_privileges_status=1
+  fi
+  exit "$role_privileges_status"
+fi
+
+if [[ "$P1_ROLE_AUDIT_STATUS" == PASS && "$P1_ROLE_PRIVILEGES_STATUS" == PASS ]]; then
+  P1_ROLE_STATUS=PASS
+  echo "P1-ROLE=PASS scope=$P1_ROLE_SCOPE"
+else
+  P1_ROLE_STATUS=FAIL
+  echo "P1-ROLE=FAIL scope=$P1_ROLE_SCOPE" >&2
+  exit 1
+fi
 
 echo '== real PostgreSQL + Redis round-trip =='
 if run_pytest_group P1-INTEGRATION 3 \

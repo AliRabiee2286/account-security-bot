@@ -15,7 +15,7 @@ Offline/static PASS is informative and does not close Phase 1.
 | P1-DB | `alembic upgrade head` from empty DB | BLOCKED | | |
 | P1-REDIS | two-worker outbox + stuck reclaim | BLOCKED | | |
 | P1-CI | uv sync, ruff, mypy, import-linter, pytest | BLOCKED | | |
-| P1-RACE | 20 concurrent pairs + replay/expiry; PostgreSQL; no HTTP | BLOCKED (Linux CI/review pending; local PASS below) | | |
+| P1-RACE | 20 pairs + lock-wait overlap + replay/expiry; PostgreSQL; no HTTP | PASS (Linux CI; independent reviewer pending) | | |
 | P1-WEBHOOK | invalid secret 403, valid secret 200 | BLOCKED | | |
 | P1-RESTORE | encrypted backup restore and checksum | BLOCKED | | |
 | P1-SECURITY | review S-011..S-022 applicable controls | BLOCKED | | |
@@ -71,6 +71,15 @@ Implementation commit: `9a4914c` (`test: verify one-time form lock overlap`).
 These are local Docker results, not a GitHub Actions run or independent reviewer approval.
 No push, product changes, migration changes, or workflow changes were made for this package.
 
+PR2-B was subsequently merged into `main` as `59a9da2`. Linux CI passed for implementation
+commit `63a94e7`: [run #39372008697](https://github.com/AliRabiee2286/account-security-bot/actions/runs/39372008697).
+Reviewer 1: project owner. Independent reviewer: pending.
+
+| Linux CI result | Result | Counts / scope |
+|---|---|---|
+| PR2-B race group | PASS | `P1-RACE-XML tests=3 skipped=0 errors=0 failures=0`; `P1-RACE=PASS` |
+| Overall staging result | `PARTIAL` | `Result: PARTIAL — 4 gates BLOCKED/NOT_RUN` |
+
 | Local check | Result | Counts / scope |
 |---|---|---|
 | Disposable services and migration | PASS | PostgreSQL 16 + Redis 7; authenticated TCP; loopback-only ports; random in-memory/process-environment passwords; head `0007`; admin superuser, runtime non-superuser |
@@ -123,6 +132,31 @@ in these runs. If it does, stop and report `app/core/one_time_form_store.py:61-7
 patching product code or schema in PR2-B.
 
 `P1-RACE` scope: **one-time form consume; 20 barrier-synchronized pairs + 1 lock-wait overlap
-case, exactly one winner each; PostgreSQL; no HTTP**. This is not HTTP/CSRF/authorization/encryption evidence. Linux CI
-for PR2-B and independent review remain pending; Phase 1 is still `PARTIAL` and Phase 2
+case, exactly one winner each; PostgreSQL; no HTTP**. This is not HTTP/CSRF/authorization/encryption evidence. Independent review
+remains pending; Phase 1 is still `PARTIAL` and Phase 2
 is still `BLOCKED`. `P1-REDIS-WORKERS`, `P1-RESTORE`, and `SEC-004` are not closed.
+
+## PR2-C local verification — 2026-10-20, Asia/Tehran
+
+Branch: `stg-001-pr2c-roles`, based on `main` after PR2-B merge.
+Implementation commit: `d12092d` (`test: enforce runtime role privileges`).
+These are local Docker results, not a GitHub Actions run or independent reviewer approval.
+No push, product changes, migration changes, or workflow changes were made for this package.
+
+| Local check | Result | Counts / scope |
+|---|---|---|
+| Disposable services and migration | PASS | PostgreSQL 16 + Redis 7; loopback-only ports; random process-environment-only passwords; migration head `0007`; runtime role non-superuser |
+| Positive role group | PASS | 2 passed, 0 skipped/errors/failures; catalog `table_count=21`, `schema_count=6`, zero table/schema/attribute/membership/database violations |
+| Sensitive-table DELETE checks | PASS | `SELECT` succeeded and four runtime DELETE attempts were rejected with SQLSTATE `42501` |
+| Temporary DELETE grant control | PASS (expected test failure) | Granting DELETE on `social.credentials` produced 2 failures and identified only `social.credentials`; grant was revoked |
+| Temporary TRUNCATE grant control | PASS (expected test failure) | Granting TRUNCATE on a temporary `core` table produced 1 failure and identified that table; table was dropped |
+| Audit trigger control | PASS (expected control result) | Temporary audit TRUNCATE reached trigger SQLSTATE `P0001`; it was not accepted as privilege denial; grant was revoked |
+| Restored role group | PASS | 2 passed, 0 skipped/errors/failures; catalog returned to 21 tables with zero violations |
+| Complete staging gate | PASS (local executable gates) | Exit 0; `P1-ROLE=PASS`, role XML `tests=2`, connectivity XML `tests=3`, race XML `tests=3`, all with zero skips/errors/failures; overall `PARTIAL` with SECURITY, WEBHOOK-DELIVERY, REDIS-WORKERS and RESTORE blocked |
+| Offline checks after PR2-C | PASS | Ruff, format, mypy, import-linter, validators, offline smoke, import smoke; `uv run pytest -q` 77 passed, 8 skipped by integration guard |
+| Cleanup | PASS | Disposable PostgreSQL/Redis containers removed with `docker rm -fv`; temporary grants, table, reports and harness removed |
+
+The role evidence is limited to PostgreSQL effective privileges. It does not close the
+non-superuser migration-admin gap (`SEC-002`), HTTP authorization/CSRF, encryption, provider
+delivery, independent review, or production readiness. The temporary negative controls were
+external to the repository and are not part of the commit.

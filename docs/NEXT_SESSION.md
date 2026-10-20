@@ -1,9 +1,10 @@
-# دستور جلسه بعد — بازبینی PR2-B پس از ادغام PR2-A
+# دستور جلسه بعد — receipt لینوکسی و review برای PR2-C
 
-**اولین کار جلسه بعد:** دو commit شاخهٔ `stg-001-pr2b-race` را بازبینی و evidence
-اجرای مستقل connectivity و race در CI لینوکسی GitHub را ثبت کنید؛ push و PR با صاحب
-پروژه است. تست/gate در `9a4914c` ثبت شد؛ PR2-A در `main` با `3700466` ادغام شده است.
-تمرین Docker PR2-B موفق بود، اما CI/review جدید آن هنوز pending و Phase 1 `PARTIAL` است.
+**اولین کار جلسه بعد:** commitهای PR2-C روی شاخهٔ `stg-001-pr2c-roles` را بازبینی کنید،
+push/PR را با صاحب پروژه انجام دهید و receipt Linux CI برای role privilege probe و catalog
+sweep را ثبت کنید؛ این جلسه push نمی‌کند.
+PR2-B در `main` با `59a9da2` ادغام شد و [Linux CI آن](https://github.com/AliRabiee2286/account-security-bot/actions/runs/39372008697)
+روی commit `63a94e7` سبز شد. Reviewer 1 صاحب پروژه است؛ reviewer مستقل PR2-B همچنان pending است.
 
 این سند برنامهٔ جاری PR2 است. تاریخچهٔ STEP-000 و برنامهٔ اجرایی PR1 در
 `docs/archive/STG-001-PR1-plan.md` نگهداری می‌شود. در اجرای PR2، کد، migration و
@@ -69,7 +70,7 @@ pytest exit=0 و JUnit معتبر با skipped/errors/failures=0 نیاز دار
 - توقف/خطر: timeout، permission یا اتصال ناموفق؛ سرویس و exception type گزارش و PR
   متوقف شود.
 
-### PR2-B — race فرم یک‌بارمصرف
+### PR2-B — race فرم یک‌بارمصرف — انجام‌شده
 
 - پیاده‌سازی: دقیقاً سه تست در `tests/integration/test_one_time_form_race.py`، با fixture
   file-local و بدون تغییر `app/`، migration، schema یا workflow؛ تست/gate در `9a4914c`.
@@ -93,8 +94,9 @@ pytest exit=0 و JUnit معتبر با skipped/errors/failures=0 نیاز دار
   برابر 83 passed؛ همه بدون skip. کنترل منفی با کپی بیرون repo و حذف guard، هم تست barrier
   و هم overlap را با `winners=2, losers=0` رد کرد؛ اجرای primitive اصلی دوباره PASS شد. gate عادی `PARTIAL`
   با 4 BLOCKED و gate تحت کنترل منفی `FAIL` داشت. نسخه‌های موقت حذف شدند.
-- `P1-REDIS-WORKERS` و `P1-RESTORE` همچنان BLOCKED هستند. CI/review مستقل PR2-B pending
-  است؛ PASS محلی storage، HTTP/CSRF/authorization/encryption یا production readiness نیست.
+- Linux CI: روی `63a94e7`، `P1-RACE-XML tests=3 skipped=0 errors=0 failures=0`،
+  `P1-RACE=PASS` و `Result: PARTIAL — 4 gates BLOCKED/NOT_RUN`. `P1-REDIS-WORKERS` و
+  `P1-RESTORE` همچنان BLOCKED هستند. Reviewer 1 صاحب پروژه است؛ reviewer مستقل pending است.
 - توقف/خطر: بیش از یک winner در **primitive اصلی** یا نیاز به API/schema؛ فایل و خط
   `app/core/one_time_form_store.py:61-78` و علت sanitized گزارش و PR متوقف بماند. دو winner
   در نسخهٔ عمداً معیوبِ کنترل منفی، انتظار تست است و باگ تازهٔ محصول محسوب نمی‌شود.
@@ -112,6 +114,16 @@ pytest exit=0 و JUnit معتبر با skipped/errors/failures=0 نیاز دار
   تعیین شود و trigger rejection با privilege denial اشتباه نشود.
 - پذیرش: چهار 42501، catalog check کامل، عملیات مجاز جدا و output بدون DSN/password.
 - توقف/خطر: grant نادرست یا admin نامطمئن؛ فقط گزارش و `BLOCKED/FAIL`، بدون اصلاح migration.
+- نتیجهٔ محلی ۲۰ اکتبر ۲۰۲۶: commit `d12092d` فقط `tests/integration/test_runtime_role_privileges.py`
+  و `scripts/staging_gate.sh` را تغییر داد. PostgreSQL 16 + Redis 7 disposable با migration
+  head=`0007` استفاده شد؛ positive role group برابر 2 passed و catalog شامل ۲۱ جدول در ۶
+  schema بود، با صفر table/schema/attribute/membership/database violation. چهار DELETE با
+  `42501` رد شدند، grantهای موقت DELETE/TRUNCATE کنترل منفی مورد انتظار را شکست دادند،
+  trigger audit با `P0001` اشتباه به‌عنوان privilege denial پذیرفته نشد و اجرای restored دوباره
+  2 passed شد. Complete staging gate exit=0 و `P1-ROLE=PASS` بود؛ overall همچنان `PARTIAL` است.
+- وضعیت بسته: **پیاده‌سازی و local evidence انجام‌شده؛ SEC-003 برای این scope verify شد**.
+  Linux CI، merge روی `main` و reviewer مستقل هنوز pending هستند؛ این وضعیت production-ready
+  یا non-superuser migration-admin proof (`SEC-002`) نیست.
 
 ### PR2-D — دو worker و reclaim برای outbox
 
@@ -204,6 +216,6 @@ admin غیر-superuser بعد از `PR2-E` و پس از تصمیم طراحی ج
 
 ## قدم بعدی رسمی
 
-**`PR2-B — بازبینی دو commit و ثبت evidence اجرای مستقل race در CI لینوکسی GitHub`**؛
-push/PR فقط با اقدام صاحب پروژه انجام می‌شود؛ در این جلسه push نشد. پس از CI/review و
-ادغام PR2-B، شروع PR2-C به تصمیم صاحب پروژه وابسته است و فعلاً اجرا نمی‌شود.
+**`PR2-C — بازبینی/push و Linux CI receipt برای role privilege probe و catalog sweep`**؛
+پیاده‌سازی محلی در `d12092d` انجام شده و push/PR فقط با اقدام صاحب پروژه انجام می‌شود؛
+در این جلسه push نمی‌شود. پس از receipt و review، `PR2-D` بستهٔ بعدی است.

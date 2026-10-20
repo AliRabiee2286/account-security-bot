@@ -1,7 +1,7 @@
 # وضعیت canonical پروژه
 
-**آخرین بازبینی:** ۱۹ اکتبر ۲۰۲۶، منطقه زمانی تهران؛ baseline در ۱۴ اکتبر پذیرفته شد
-**دامنه این به‌روزرسانی:** PR2-B، سه تست race/overlap/replay/expiry و helper مشترک gate، با evidence محلی Docker؛ بدون تغییر `app/`، migration یا workflow
+**آخرین بازبینی:** ۲۰ اکتبر ۲۰۲۶، منطقه زمانی تهران؛ baseline در ۱۴ اکتبر پذیرفته شد
+**دامنه این به‌روزرسانی:** ثبت اجرای محلی PR2-C پس از ادغام PR2-B؛ بدون تغییر `app/`، migration یا workflow
 
 این فایل تنها مرجع وضعیت جاری و تنها محل ثبت «قدم بعدی» رسمی است. وضعیت‌ها و قدم‌های
 قبلی در `task_plan.md`، `findings.md`، `progress.md` و Second Brain به‌عنوان تاریخچه
@@ -27,9 +27,10 @@
 | حوزه | وضعیت | توضیح کوتاه و شاهد |
 |---|---|---|
 | بنیاد offline/static | `VERIFIED` | lock، compile، unit test، Ruff، mypy، import boundary و validatorهای ثبت‌شده سبز هستند. |
-| CI workflow syntax | `VERIFIED` | run #5 با commit `a20c620` در GitHub Actions بارگذاری و کامل اجرا شد؛ workflow در PR2-B تغییر نکرده و CI جدید این بسته هنوز اجرا نشده است. |
+| CI workflow syntax | `VERIFIED` | run #5 با commit `a20c620` در GitHub Actions کامل اجرا شد؛ workflow در PR2-B تغییر نکرد. |
 | migration chain روی DB خالی | `VERIFIED` | `alembic upgrade head` روی PostgreSQL 16 disposable موفق شد و `current=heads=0007` ثبت شد؛ محدودیت: نقش admin در CI، superuser بود و اثبات با admin غیر-superuser انجام نشده است. |
-| PostgreSQL/Redis و CI runtime | `PARTIAL` | PR2-A در `main` با `3700466` ادغام شد؛ pull تأیید شد. connectivity در تمرین PR2-B دوباره 3 passed و full enabled برابر 83 passed شد، بدون skip؛ CI/review مستقل PR2-B هنوز pending است. |
+| runtime role privilege probe | `VERIFIED_LOCALLY` | PR2-C روی PostgreSQL 16 disposable: چهار DELETE با `42501` رد شدند؛ catalog شامل ۲۱ جدول در ۶ schema بود و violationهای table/schema/attribute/membership/database صفر بود؛ Linux CI و reviewer مستقل pending هستند. |
+| PostgreSQL/Redis و CI runtime | `PARTIAL` | PR2-A و PR2-B در `main` ادغام شدند (`3700466`, `59a9da2`). Linux CI برای PR2-B روی `63a94e7` سبز شد؛ reviewer مستقل هنوز pending است. |
 | Telegram Mini App proof | `IMPLEMENTED_NOT_VERIFIED` | validator و route ثبت‌نام وجود دارد؛ deploy و smoke واقعی نداریم. |
 | registration/approval | `PARTIAL` | ثبت pending و اسکلت approval وجود دارد؛ زنجیره کامل session و MFA اثبات نشده است. |
 | session/auth resolver | `PARTIAL` | resolver و hash DB-backed وجود دارند؛ همه routeهای حساس هنوز به جریان نهایی وصل نیستند. |
@@ -45,9 +46,14 @@
 
 ## وضعیت فازها
 
-- **Phase 1: `PARTIAL`** — PR2-A ادغام شده و PR2-B روی `stg-001-pr2b-race` از
-  `main` به‌روز (`3700466`) ساخته شد. کد تست/gate در `9a4914c` ثبت شد؛ اجرای مستقل
-  connectivity برابر 3 passed و race برابر 3 passed بود، بدون skip/error/failure.
+- **Phase 1: `PARTIAL`** — PR2-A و PR2-B ادغام شده‌اند. PR2-B روی `main` با `59a9da2`
+  موجود است و Linux CI روی `63a94e7` PASS شد: `P1-RACE-XML tests=3 skipped=0 errors=0 failures=0`،
+  `P1-RACE=PASS` و `Result: PARTIAL — 4 gates BLOCKED/NOT_RUN`.
+- PR2-C روی شاخهٔ `stg-001-pr2c-roles` در commit `d12092d` به‌صورت محلی اجرا و verify شد.
+  `P1-ROLE-PRIVILEGES-XML tests=2 skipped=0 errors=0 failures=0` و `P1-ROLE=PASS` ثبت شد؛
+  catalog sweep همهٔ ۶ schema و ۲۱ جدول را پوشش داد، membership در `sentinel_app_role` و
+  محدودیت attributeها را بررسی کرد و هیچ violationی نداشت. این receipt محلی است و جای Linux CI
+  یا reviewer مستقل را نمی‌گیرد.
 - در هر اجرای تست race، 20 فرم تازه با دو connection واقعی runtime و barrier مصرف شدند:
   20 winner، 20 loser و 20 مقدار non-NULL بعد از commit. overlap نیز lock واقعی را در
   `pg_stat_activity` دید؛ purpose mismatch، replay و expiry نیز رد شدند.
@@ -57,20 +63,23 @@
 - gate کامل محلی با helper مشترک و JUnit مستقل، `P1-INTEGRATION=PASS` و `P1-RACE=PASS`
   و نتیجهٔ `PARTIAL — 4 gates BLOCKED/NOT_RUN` داشت. چهار مورد باز: SECURITY،
   WEBHOOK-DELIVERY، REDIS-WORKERS و RESTORE. کنترل منفی gate را `FAIL` کرد، نه PASS.
-- full enabled suite برابر 83 passed و offline برابر 77 passed/6 skipped بود؛ Ruff،
-  format، mypy، shell syntax و diff check موفق شدند. جزئیات در evidence ثبت شده‌اند.
-  PASS محلی جایگزین CI لینوکسی و review مستقل PR2-B نیست؛ `SEC-004` همچنان مانع باز است.
+- در اجرای فعلی پس از PR2-C، full offline suite برابر 77 passed/8 skipped بود؛ integrationها
+  بدون `RUN_INTEGRATION=1` عمداً skip می‌شوند. در gate disposable، connectivity و race هرکدام
+  3 case و role privilege گروه 2 case با zero skip/error/failure داشتند؛ Ruff، format، mypy،
+  shell syntax و diff check نیز موفق شدند. جزئیات در evidence ثبت شده‌اند.
+  reviewer مستقل PR2-B همچنان pending است؛ `SEC-004` نیز مانع باز باقی می‌ماند.
 - **Phase 2: `BLOCKED`** — WebAuthn واقعی، session issuance بعد از approval/MFA و Mini App
   deploy/integration هنوز انجام نشده‌اند.
 - `offline/static PASS` به‌تنهایی هیچ‌یک از این دو وضعیت را تغییر نمی‌دهد.
 
 ## تنها قدم بعدی رسمی
 
-**`PR2-B — بازبینی دو commit و ثبت evidence اجرای مستقل race در CI لینوکسی GitHub`**
+**`PR2-C — بازبینی صاحب پروژه، push/merge و دریافت Linux CI برای role privilege probe`**
 
-push و PR با صاحب پروژه است؛ این جلسه push نکرد. بعد از CI/review و ادغام PR2-B، بستهٔ
-بعدی برای تصمیم صاحب پروژه PR2-C است؛ در این جلسه شروع نشد. race فقط storage PostgreSQL
-را پوشش می‌دهد و هیچ gate دیگر یا آمادگی production با این تمرین بسته نمی‌شود.
+PR2-B در `main` با `59a9da2` ادغام شده و [Linux CI آن](https://github.com/AliRabiee2286/account-security-bot/actions/runs/39372008697)
+روی `63a94e7` سبز است. Reviewer 1 صاحب پروژه است؛ reviewer مستقل pending است. قدم رسمی بعدی
+پس از اجرای محلی `d12092d`، بازبینی/push و receipt لینوکسی PR2-C است؛ push با صاحب پروژه است و
+این جلسه push نمی‌کند. بعد از receipt و review، `PR2-D` بستهٔ بعدی خواهد بود.
 
 ## ممنوعیت‌های این baseline
 
