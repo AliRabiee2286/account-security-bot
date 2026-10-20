@@ -187,7 +187,7 @@ write_summary() {
       printf '| P1-INTEGRATION | %s | real PostgreSQL + Redis round-trip |\n' "$P1_INTEGRATION_STATUS"
       printf '| P1-WEBHOOK-GUARD | %s | function-level, no HTTP |\n' "$P1_WEBHOOK_GUARD_STATUS"
       printf '| P1-WEBHOOK-DELIVERY | %s | real Telegram delivery; synthetic token only loads Settings; no Telegram contact; outside PR1 |\n' "$P1_WEBHOOK_DELIVERY_STATUS"
-      printf '| P1-RACE | %s | one-time form consume; 20 concurrent pairs, exactly one winner each; PostgreSQL; no HTTP |\n' "$P1_RACE_STATUS"
+      printf '| P1-RACE | %s | one-time form consume; 20 barrier-synchronized pairs + 1 lock-wait overlap case, exactly one winner each; PostgreSQL; no HTTP |\n' "$P1_RACE_STATUS"
       printf '| P1-REDIS-WORKERS | %s | two-worker outbox/reclaim; test absent in PR1 |\n' "$P1_REDIS_WORKERS_STATUS"
       printf '| P1-RESTORE | %s | backup/restore; test absent in PR1 |\n' "$P1_RESTORE_STATUS"
     } >> "$GITHUB_STEP_SUMMARY"
@@ -395,13 +395,13 @@ P1_WEBHOOK_GUARD_STATUS=PASS
 echo 'P1-WEBHOOK-DELIVERY=BLOCKED scope=real Telegram delivery; synthetic token is settings-load-only; no Telegram contact; outside PR1 and no real bot token'
 
 echo '== one-time form consume race =='
-if run_pytest_group P1-RACE 2 tests/integration/test_one_time_form_race.py; then
+if run_pytest_group P1-RACE 3 tests/integration/test_one_time_form_race.py; then
   P1_RACE_STATUS=PASS
-  echo 'P1-RACE=PASS scope=one-time form consume; 20 concurrent pairs, exactly one winner each; PostgreSQL; no HTTP'
+  echo 'P1-RACE=PASS scope=one-time form consume; 20 barrier-synchronized pairs + 1 lock-wait overlap case, exactly one winner each; PostgreSQL; no HTTP'
 else
   race_status=$?
   P1_RACE_STATUS=FAIL
-  echo 'P1-RACE=FAIL scope=one-time form consume; 20 concurrent pairs, exactly one winner each; PostgreSQL; no HTTP' >&2
+  echo 'P1-RACE=FAIL scope=one-time form consume; 20 barrier-synchronized pairs + 1 lock-wait overlap case, exactly one winner each; PostgreSQL; no HTTP' >&2
   exit "$race_status"
 fi
 echo '== scenario coverage not implemented in PR1 =='

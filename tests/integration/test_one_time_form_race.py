@@ -40,6 +40,18 @@ CLOSE_TIMEOUT = 5
 PAIR_TIMEOUT = 20
 
 IDENTITY_QUERY = text("SELECT current_user, session_user, pg_backend_pid()")
+LOCK_WAIT_QUERY = text(
+    """
+    SELECT pid
+      FROM pg_stat_activity
+     WHERE usename = 'sentinel_app'
+       AND datname = current_database()
+       AND pid <> pg_backend_pid()
+       AND wait_event_type = 'Lock'
+       AND pid = :blocked_pid
+     LIMIT 1
+    """
+)
 
 pytestmark = pytest.mark.skipif(
     os.getenv("RUN_INTEGRATION") != "1",
@@ -63,6 +75,16 @@ class SyntheticForm:
     raw_token: str = field(repr=False)
     subject_id: UUID
     owner_id: UUID
+
+
+@dataclass
+class LockWaitState:
+    first_consumed: asyncio.Event
+    second_started: asyncio.Event
+    release_first: asyncio.Event
+    identities: dict[str, tuple[str, str, int]] = field(default_factory=dict)
+    outcomes: dict[str, ConsumedForm | None] = field(default_factory=dict)
+    committed: dict[str, bool] = field(default_factory=lambda: {"first": False, "second": False})
 
 
 def _require(condition: bool, message: str) -> None:
@@ -325,6 +347,167 @@ async def _consume_pair(
     return pair
 
 
+async def _consume_lock_wait_first(
+    database: RaceDatabase,
+    raw_token: str,
+    state: LockWaitState,
+    sessions: list[AsyncSession],
+) -> None:
+    session = database.runtime_sessions()
+    sessions.append(session)
+    try:
+        async with session.begin():
+            connection = await session.connection()
+            identity = (await connection.execute(IDENTITY_QUERY)).one()
+            state.identities["first"] = (identity[0], identity[1], identity[2])
+            if identity[0] != "sentinel_app" or identity[1] != "sentinel_app":
+                raise RuntimeError(
+                    "lock-wait first contender requires the actual sentinel_app role"
+                )
+            state.outcomes["first"] = await consume_form(
+                session, raw_token=raw_token, purpose=FORM_PURPOSE
+            )
+            state.first_consumed.set()
+            await state.release_first.wait()
+        state.committed["first"] = True
+    finally:
+        state.first_consumed.set()
+
+
+async def _consume_lock_wait_second(
+    database: RaceDatabase,
+    raw_token: str,
+    state: LockWaitState,
+    sessions: list[AsyncSession],
+) -> None:
+    await state.first_consumed.wait()
+    session = database.runtime_sessions()
+    sessions.append(session)
+    try:
+        async with session.begin():
+            connection = await session.connection()
+            identity = (await connection.execute(IDENTITY_QUERY)).one()
+            state.identities["second"] = (identity[0], identity[1], identity[2])
+            if identity[0] != "sentinel_app" or identity[1] != "sentinel_app":
+                raise RuntimeError(
+                    "lock-wait second contender requires the actual sentinel_app role"
+                )
+            state.second_started.set()
+            state.outcomes["second"] = await consume_form(
+                session, raw_token=raw_token, purpose=FORM_PURPOSE
+            )
+        state.committed["second"] = True
+    finally:
+        state.second_started.set()
+
+
+async def _observe_lock_wait(database: RaceDatabase, blocked_pid: int) -> tuple[bool, bool]:
+    connection: AsyncConnection | None = None
+    observed = False
+    failed = False
+    try:
+        async with asyncio.timeout(QUERY_TIMEOUT):
+            connection = database.admin_engine.connect()
+            await connection.start()
+            identity = (await connection.execute(IDENTITY_QUERY)).one()
+            if identity[0] != "sentinel_admin" or identity[1] != "sentinel_admin":
+                failed = True
+            while not failed and not observed:
+                result = await connection.execute(LOCK_WAIT_QUERY, {"blocked_pid": blocked_pid})
+                observed_pid = result.scalar_one_or_none()
+                await connection.commit()
+                if observed_pid == blocked_pid:
+                    observed = True
+                else:
+                    await asyncio.sleep(0)
+    except BaseException:
+        failed = True
+    closed = connection is None or await _release(connection.close)
+    return not failed and observed, closed
+
+
+async def _drain_lock_wait_tasks(tasks: list[asyncio.Task[None]]) -> bool:
+    try:
+        done, _ = await asyncio.wait(tasks, timeout=CLOSE_TIMEOUT + QUERY_TIMEOUT)
+        if len(done) != len(tasks):
+            for task in tasks:
+                if not task.done():
+                    task.cancel()
+            done, _ = await asyncio.wait(tasks, timeout=CLOSE_TIMEOUT)
+        return len(done) == len(tasks)
+    except BaseException:
+        for task in tasks:
+            if not task.done():
+                task.cancel()
+        return False
+
+
+async def _consume_with_deterministic_lock_wait(
+    database: RaceDatabase, raw_token: str
+) -> tuple[ConsumedForm | None, ConsumedForm | None]:
+    state = LockWaitState(asyncio.Event(), asyncio.Event(), asyncio.Event())
+    sessions: list[AsyncSession] = []
+    tasks = [
+        asyncio.create_task(_consume_lock_wait_first(database, raw_token, state, sessions)),
+        asyncio.create_task(_consume_lock_wait_second(database, raw_token, state, sessions)),
+    ]
+    failed = False
+    observed_lock_wait = False
+    admin_closed = True
+    try:
+        async with asyncio.timeout(QUERY_TIMEOUT):
+            await state.first_consumed.wait()
+            await state.second_started.wait()
+        blocked_pid = state.identities.get("second", ("", "", 0))[2]
+        if blocked_pid == 0:
+            failed = True
+        else:
+            observed_lock_wait, admin_closed = await _observe_lock_wait(database, blocked_pid)
+    except BaseException:
+        failed = True
+    finally:
+        state.release_first.set()
+        drained = await _drain_lock_wait_tasks(tasks)
+        sessions_closed = True
+        for session in sessions:
+            sessions_closed = (await _release(session.close)) and sessions_closed
+        _require(
+            drained and sessions_closed and admin_closed,
+            "Deterministic lock-wait consumers or cleanup did not finish within the timeout",
+        )
+
+    _require(not failed and observed_lock_wait, "Expected PostgreSQL lock wait was not observed")
+    tasks_succeeded = all(
+        task.done() and not task.cancelled() and task.exception() is None for task in tasks
+    )
+    _require(tasks_succeeded, "Deterministic lock-wait consume operation failed")
+    _require(
+        len(state.identities) == 2
+        and all(
+            current == login == "sentinel_app" for current, login, _ in state.identities.values()
+        ),
+        "Lock-wait contenders did not both use current_user=session_user=sentinel_app",
+    )
+    _require(
+        len({pid for _, _, pid in state.identities.values()}) == 2,
+        "Lock-wait consumers did not use distinct PostgreSQL backend PIDs",
+    )
+    _require(
+        state.committed["first"] and state.committed["second"],
+        "Both deterministic lock-wait consume transactions must commit",
+    )
+    first = state.outcomes.get("first")
+    second = state.outcomes.get("second")
+    winners = [result for result in (first, second) if result is not None]
+    losers = [result for result in (first, second) if result is None]
+    _require(
+        len(winners) == 1,
+        "Lock-wait overlap must produce exactly one winner "
+        f"(winners={len(winners)}, losers={len(losers)})",
+    )
+    return first, second
+
+
 async def _consumed_state(database: RaceDatabase, raw_token: str) -> bool | None:
     # A fresh session/transaction observes only committed state; None means no row.
     async def read(session: AsyncSession) -> bool | None:
@@ -340,10 +523,12 @@ async def _consumed_state(database: RaceDatabase, raw_token: str) -> bool | None
     return await _runtime_operation(database, read)
 
 
-async def _consume_committed(database: RaceDatabase, raw_token: str) -> ConsumedForm | None:
+async def _consume_committed(
+    database: RaceDatabase, raw_token: str, *, purpose: str = FORM_PURPOSE
+) -> ConsumedForm | None:
     async def consume(session: AsyncSession) -> ConsumedForm | None:
         async with session.begin():
-            consumed = await consume_form(session, raw_token=raw_token, purpose=FORM_PURPOSE)
+            consumed = await consume_form(session, raw_token=raw_token, purpose=purpose)
         return consumed
 
     return await _runtime_operation(database, consume)
@@ -387,6 +572,11 @@ async def test_one_time_form_consume_race(race_database: RaceDatabase) -> None:
 
 async def test_one_time_form_replay_and_expiry(race_database: RaceDatabase) -> None:
     form = await _issue_synthetic_form(race_database, ttl=timedelta(minutes=5))
+    wrong_purpose = await _consume_committed(race_database, form.raw_token, purpose="social_oauth")
+    _require(wrong_purpose is None, "Wrong-purpose consume unexpectedly succeeded")
+    wrong_purpose_state = await _consumed_state(race_database, form.raw_token)
+    _require(wrong_purpose_state is False, "Wrong-purpose consume changed consumed_at")
+
     first_consume = await _consume_committed(race_database, form.raw_token)
     _require(first_consume is not None, "Initial consume did not win")
     consumed = await _consumed_state(race_database, form.raw_token)
@@ -401,3 +591,17 @@ async def test_one_time_form_replay_and_expiry(race_database: RaceDatabase) -> N
     expired_state = await _consumed_state(race_database, expired_form.raw_token)
     _require(expired_state is False, "Expired form must exist with NULL consumed_at")
     print("one-time-form replay/expiry: consumed replay and expired form were rejected")
+
+
+async def test_one_time_form_deterministic_lock_wait(race_database: RaceDatabase) -> None:
+    form = await _issue_synthetic_form(race_database, ttl=timedelta(minutes=5))
+    first, second = await _consume_with_deterministic_lock_wait(race_database, form.raw_token)
+    _require(isinstance(first, ConsumedForm), "Deterministic lock-wait winner is invalid")
+    _require(second is None, "Deterministic lock-wait loser unexpectedly won")
+    _require(first.subject_id == form.subject_id, "Lock-wait winner subject binding is incorrect")
+    _require(first.owner_id == form.owner_id, "Lock-wait winner owner binding is incorrect")
+    _require(first.owner_type == FORM_OWNER_TYPE, "Lock-wait winner owner type is incorrect")
+    _require(first.purpose == FORM_PURPOSE, "Lock-wait winner purpose is incorrect")
+    consumed = await _consumed_state(race_database, form.raw_token)
+    _require(consumed is True, "Lock-wait committed consumed_at was not set")
+    print("one-time-form deterministic lock-wait: winner committed before loser returned")
