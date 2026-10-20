@@ -15,7 +15,7 @@ Offline/static PASS is informative and does not close Phase 1.
 | P1-DB | `alembic upgrade head` from empty DB | BLOCKED | | |
 | P1-REDIS | two-worker outbox + stuck reclaim | BLOCKED | | |
 | P1-CI | uv sync, ruff, mypy, import-linter, pytest | BLOCKED | | |
-| P1-RACE | 20 concurrent pairs + replay/expiry; PostgreSQL; no HTTP | BLOCKED (Linux CI/review pending; local PASS below) | | |
+| P1-RACE | 20 pairs + lock-wait overlap + replay/expiry; PostgreSQL; no HTTP | PASS (Linux CI; independent reviewer pending) | | |
 | P1-WEBHOOK | invalid secret 403, valid secret 200 | BLOCKED | | |
 | P1-RESTORE | encrypted backup restore and checksum | BLOCKED | | |
 | P1-SECURITY | review S-011..S-022 applicable controls | BLOCKED | | |
@@ -71,6 +71,15 @@ Implementation commit: `9a4914c` (`test: verify one-time form lock overlap`).
 These are local Docker results, not a GitHub Actions run or independent reviewer approval.
 No push, product changes, migration changes, or workflow changes were made for this package.
 
+PR2-B was subsequently merged into `main` as `59a9da2`. Linux CI passed for implementation
+commit `63a94e7`: [run #39372008697](https://github.com/AliRabiee2286/account-security-bot/actions/runs/39372008697).
+Reviewer 1: project owner. Independent reviewer: pending.
+
+| Linux CI result | Result | Counts / scope |
+|---|---|---|
+| PR2-B race group | PASS | `P1-RACE-XML tests=3 skipped=0 errors=0 failures=0`; `P1-RACE=PASS` |
+| Overall staging result | `PARTIAL` | `Result: PARTIAL — 4 gates BLOCKED/NOT_RUN` |
+
 | Local check | Result | Counts / scope |
 |---|---|---|
 | Disposable services and migration | PASS | PostgreSQL 16 + Redis 7; authenticated TCP; loopback-only ports; random in-memory/process-environment passwords; head `0007`; admin superuser, runtime non-superuser |
@@ -123,6 +132,6 @@ in these runs. If it does, stop and report `app/core/one_time_form_store.py:61-7
 patching product code or schema in PR2-B.
 
 `P1-RACE` scope: **one-time form consume; 20 barrier-synchronized pairs + 1 lock-wait overlap
-case, exactly one winner each; PostgreSQL; no HTTP**. This is not HTTP/CSRF/authorization/encryption evidence. Linux CI
-for PR2-B and independent review remain pending; Phase 1 is still `PARTIAL` and Phase 2
+case, exactly one winner each; PostgreSQL; no HTTP**. This is not HTTP/CSRF/authorization/encryption evidence. Independent review
+remains pending; Phase 1 is still `PARTIAL` and Phase 2
 is still `BLOCKED`. `P1-REDIS-WORKERS`, `P1-RESTORE`, and `SEC-004` are not closed.

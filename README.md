@@ -55,8 +55,9 @@ tests/               # unit and integration tests
 The offline foundation gate is green: the project has a checked-in `uv.lock`, strict typing,
 Ruff, import boundaries, unit tests, import smoke, migration/static validators, and offline
 security smoke. This does **not** make the project production-ready. Phase 1 is **PARTIAL**
-(see `docs/STATUS.md`). PR2-A is merged into `main` at `3700466`. PR2-B adds locally verified
-one-time-form races; its Linux CI evidence and independent review are still pending. Real
+(see `docs/STATUS.md`). PR2-A is merged into `main` at `3700466`, and PR2-B is merged into
+`main` at `59a9da2`. Linux CI passed for PR2-B on commit `63a94e7`; the independent reviewer
+is still pending. Real
 Telegram delivery, two-worker outbox/reclaim, restore, and two-person security review remain
 open; local PASS does not close the release gate.
 
@@ -80,8 +81,17 @@ one winner and one loser, with committed `consumed_at` set. The second test reje
 expired forms. Admin cleanup deletes only that test's registered hashes and verifies no rows
 remain; runtime DELETE is intentionally forbidden.
 
-Local evidence for the updated group: connectivity **3 passed**, race **3 passed**, full
-enabled suite **83 passed**, all with zero skips. The overlap test
+Local and CI evidence for the updated group: connectivity **3 passed**, race **3 passed**,
+full enabled suite **83 passed**, all with zero skips. Linux CI recorded:
+
+```text
+P1-RACE-XML tests=3 skipped=0 errors=0 failures=0
+P1-RACE=PASS
+Result: PARTIAL — 4 gates BLOCKED/NOT_RUN
+```
+
+See the [PR2-B Linux CI run](https://github.com/AliRabiee2286/account-security-bot/actions/runs/39372008697).
+The overlap test
 observes a real PostgreSQL `Lock` wait through `pg_stat_activity` before A commits; no guessed
 sleep is used. A temporary unguarded consume copy makes both race shapes fail with two winners;
 the copy is deleted and is not committed. Scope is PostgreSQL storage only, not HTTP, CSRF,
