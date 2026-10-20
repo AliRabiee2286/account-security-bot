@@ -1,7 +1,7 @@
 # وضعیت canonical پروژه
 
 **آخرین بازبینی:** ۲۰ اکتبر ۲۰۲۶، منطقه زمانی تهران؛ baseline در ۱۴ اکتبر پذیرفته شد
-**دامنه این به‌روزرسانی:** ثبت ادغام PR2-C و Linux CI آن؛ بدون تغییر `app/`، migration یا workflow
+**دامنه این به‌روزرسانی:** ثبت PR2-D، اصلاح محدود reclaim و local outbox evidence؛ بدون تغییر schema یا migration
 
 این فایل تنها مرجع وضعیت جاری و تنها محل ثبت «قدم بعدی» رسمی است. وضعیت‌ها و قدم‌های
 قبلی در `task_plan.md`، `findings.md`، `progress.md` و Second Brain به‌عنوان تاریخچه
@@ -40,7 +40,7 @@
 | X monitoring | `NOT_STARTED` | انتخاب X برای MVP ثبت شده، اما هزینه، دسترسی و حساب آزمایشی هنوز تأیید نشده‌اند. |
 | incident workflow | `PARTIAL` | report و idempotency وجود دارد؛ transition حساس و عملیات رسمی provider کامل نیست. |
 | scanning | `PARTIAL` | فاز اول متن‌محور تعریف شده؛ implementation فعلی محدود است و OCR خارج از MVP است. |
-| outbox/worker delivery | `STUB` | primitiveهای claim/retry وجود دارد؛ handlerهای واقعی فعال نیستند. |
+| outbox/worker delivery | `VERIFIED_LOCALLY` | PR2-D روی PostgreSQL/Redis disposable: دو worker، ده event synthetic، reclaim و mark-failed هر سه case سبز؛ handler production همچنان خالی و SEC-004 باز است. |
 | rate limit/alerts/admin | `NOT_STARTED` | primitive یا placeholder وجود دارد، اما wiring و پنل عملیاتی کامل نیست. |
 | backup/restore evidence | `BLOCKED` | restore drill واقعی و قابل‌بررسی ثبت نشده است. |
 
@@ -53,19 +53,30 @@
 - SEC-003 در Linux CI تأیید شد: catalog sweep همهٔ ۶ schema و ۲۱ جدول را پوشش داد، membership
   در `sentinel_app_role` و محدودیت attributeها را بررسی کرد و هیچ violationی نداشت. بسته‌شدن
   نهایی SEC-003 به review مستقل وابسته است؛ این receipt جای review را نمی‌گیرد.
+- مسیر reclaim روی PostgreSQL واقعی هیچ‌وقت کار نمی‌کرد و در PR2-D کشف و اصلاح شد. قبل از fix،
+  تست کامل outbox `tests=3 skipped=0 errors=0 failures=1` داشت؛ دو-worker و mark-failed سبز
+  بودند و reclaim با `asyncpg.exceptions.UndefinedFunctionError` روی `timestamp with time zone
+  < interval` شکست خورد. Commit `f4527e7` فقط `CAST(:age AS interval)` را به
+  `app/entrypoints/workers/outbox_runner.py` اضافه کرد.
+- بعد از fix، `P1-REDIS-WORKERS-XML tests=3 skipped=0 errors=0 failures=0` و
+  `P1-REDIS-WORKERS=PASS` ثبت شد. Scope عمداً فقط claim/lease/reclaim semantics با handler
+  تستی است؛ مالکیت lease سنجیده نشده و SEC-004 همچنان مانع provider واقعی است.
+- آزمایش SEC-004 نتیجهٔ **YES** داد: worker قدیمی، پس از reclaim و گرفتن lease توسط worker
+  جدید، می‌تواند `mark_delivered` را اجرا کند و row را پیش از پایان worker جدید به `delivered`
+  ببرد. این رفتار فقط گزارش شد و در PR2-D اصلاح نشد.
 - در هر اجرای تست race، 20 فرم تازه با دو connection واقعی runtime و barrier مصرف شدند:
   20 winner، 20 loser و 20 مقدار non-NULL بعد از commit. overlap نیز lock واقعی را در
   `pg_stat_activity` دید؛ purpose mismatch، replay و expiry نیز رد شدند.
   cleanup با admin فقط hashهای همان تست را پاک کرد و ردیف synthetic نامرتبط باقی ماند.
 - کنترل منفی خارج repo با حذف guard، خود تست race را با `winners=2, losers=0` شکست داد؛
   اجرای مجدد primitive اصلی PASS شد. نسخهٔ کپی، plugin و runner موقت حذف شدند.
-- gate کامل محلی با helper مشترک و JUnit مستقل، `P1-INTEGRATION=PASS` و `P1-RACE=PASS`
-  و نتیجهٔ `PARTIAL — 4 gates BLOCKED/NOT_RUN` داشت. چهار مورد باز: SECURITY،
-  WEBHOOK-DELIVERY، REDIS-WORKERS و RESTORE. کنترل منفی gate را `FAIL` کرد، نه PASS.
-- در اجرای فعلی پس از PR2-C، full offline suite برابر 77 passed/8 skipped بود؛ integrationها
-  بدون `RUN_INTEGRATION=1` عمداً skip می‌شوند. در gate disposable، connectivity و race هرکدام
-  3 case و role privilege گروه 2 case با zero skip/error/failure داشتند؛ Ruff، format، mypy،
-  shell syntax و diff check نیز موفق شدند. جزئیات در evidence ثبت شده‌اند.
+- gate کامل محلی پس از PR2-D، `P1-INTEGRATION=PASS`، `P1-RACE=PASS` و
+  `P1-REDIS-WORKERS=PASS` داشت؛ SECURITY، WEBHOOK-DELIVERY و RESTORE همچنان BLOCKED هستند.
+  گروه outbox با JUnit مستقل `tests=3 skipped=0 errors=0 failures=0` بود.
+- در اجرای فعلی پس از PR2-D، full offline suite برابر 77 passed/11 skipped بود؛ integrationها
+  بدون `RUN_INTEGRATION=1` عمداً skip می‌شوند. Ruff، format، mypy، import-linter، validators،
+  offline smoke، import smoke، shell syntax و diff check نیز موفق شدند. جزئیات در evidence
+  ثبت شده‌اند.
   reviewer مستقل PR2-B همچنان pending است؛ `SEC-004` نیز مانع باز باقی می‌ماند.
 - **Phase 2: `BLOCKED`** — WebAuthn واقعی، session issuance بعد از approval/MFA و Mini App
   deploy/integration هنوز انجام نشده‌اند.
@@ -73,13 +84,15 @@
 
 ## تنها قدم بعدی رسمی
 
-**`PR2-D — دو worker و reclaim برای outbox`**
+**`PR2-E — restore با pg_dump/pg_restore؛ پس از receipt/review PR2-D`**
 
 PR2-C در `main` با `57d7a85` ادغام شده و [Linux CI آن](https://github.com/AliRabiee2286/account-security-bot/actions/runs/39386598021)
 روی `554335d` سبز است: `P1-ROLE-PRIVILEGES-XML tests=2 skipped=0 errors=0 failures=0`،
-`P1-ROLE=PASS` و `Result: PARTIAL — 4 gates BLOCKED/NOT_RUN`. SEC-003 در CI تأیید شده، اما
-بسته‌شدن نهایی آن به review مستقل وابسته است. اجرای PR2-D فقط با handler محلی تست انجام می‌شود؛
-`app/` و migrationها تغییر نمی‌کنند و SEC-004 همچنان یک محدودیت باز است.
+`P1-ROLE=PASS` و `Result: PARTIAL — 4 gates BLOCKED/NOT_RUN`. PR2-D روی شاخهٔ
+`stg-001-pr2d-outbox` به‌صورت محلی green شد؛ Linux CI و review مستقل آن هنوز pending هستند.
+SEC-003 نیز همچنان منتظر review مستقل است. مسیر reclaim روی PostgreSQL واقعی هیچ‌وقت کار نمی‌کرد
+و در PR2-D کشف و اصلاح شد؛ `app/` فقط در commit `f4527e7` تغییر کرد، migration/schema تغییر
+نکردند، و SEC-004 برای provider واقعی باز مانده است.
 
 ## ممنوعیت‌های این baseline
 

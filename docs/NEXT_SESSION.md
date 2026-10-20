@@ -1,7 +1,8 @@
-# دستور جلسه بعد — PR2-D، دو worker و reclaim برای outbox
+# دستور جلسه بعد — PR2-E، restore پس از receipt و review برای PR2-D
 
-**اولین کار جلسه بعد:** روی شاخهٔ `stg-001-pr2d-outbox` تست مستقل claim/lease/reclaim را
-با handler محلی فقط‌برای‌تست اجرا و evidence sanitized ثبت کنید؛ push/PR با صاحب پروژه است.
+**اولین کار جلسه بعد:** commitهای PR2-D روی شاخهٔ `stg-001-pr2d-outbox` را بازبینی کنید،
+receipt Linux CI و review مستقل را بگیرید، سپس PR2-E restore را شروع کنید؛ push/PR با صاحب
+پروژه است.
 PR2-C در `main` با `57d7a85` ادغام شد و [Linux CI آن](https://github.com/AliRabiee2286/account-security-bot/actions/runs/39386598021)
 روی commit `554335d` سبز شد. Reviewer 1 صاحب پروژه است؛ reviewer مستقل PR2-C برای بسته‌شدن
 نهایی SEC-003 همچنان pending است.
@@ -127,25 +128,46 @@ pytest exit=0 و JUnit معتبر با skipped/errors/failures=0 نیاز دار
   SEC-003 به review مستقل وابسته است؛ این وضعیت production-ready یا non-superuser
   migration-admin proof (`SEC-002`) نیست.
 
-### PR2-D — دو worker و reclaim برای outbox
+### PR2-D — دو worker و reclaim برای outbox — local verified
 
 - اثبات: دو `run_once()` برای یک event synthetic فقط یک claim و یک invocation بدهند؛
   row به `delivered` برسد و delivery قدیمی از `delivering` به `pending` reclaim شود.
 - Scope: `claim/lease/reclaim semantics؛ مالکیت lease سنجیده نشده (SEC-004)؛ بدون handler تولیدی`.
   handler محلیِ فقط‌برای‌تست مجاز است؛ `HANDLERS` تولیدی خالی است و PASS فقط همین
   semantics را ثابت می‌کند، نه handler تولیدی.
-- CI/gate: یک اجرای مستقل pytest برای outbox؛ `P1-REDIS-WORKERS` از exit code و نبود skip
-  تعیین شود.
-- پذیرش: دو تست primitive در صورت پاس شدن قابل merge‌اند؛ یک invocation، `attempts=1`،
-  reclaim قابل مشاهده و بدون duplicate.
-- توقف/خطر: `reclaim_stuck()` مالکیت lease را نمی‌سنجد و worker قدیمی ممکن است نتیجهٔ
-  جدید را overwrite کند؛ این همان `SEC-004` است. در این PR فقط محدودیت مستند شود و
-  PR متوقف بماند؛ اصلاح app/schema به `PR2-F` یا تصمیم جدا منتقل می‌شود.
-- اجرای این بسته از source-level خواندن شروع می‌شود: `run_once(handlers)` با claim مبتنی بر
-  `FOR UPDATE SKIP LOCKED` و handler map محلی تست می‌شود؛ `HANDLERS` تولیدی دست‌نخورده و خالی
-  می‌ماند. اگر stale-worker آزمایش نشان دهد worker قدیمی بعد از reclaim می‌تواند نتیجهٔ worker
-  جدید را overwrite یا duplicate کند، فقط نتیجهٔ sanitized در `SEC-004` ثبت و PR متوقف می‌شود؛
-  `P1-REDIS-WORKERS` در آن حالت PASS نخواهد شد.
+- CI/gate: اجرای مستقل pytest با `P1-REDIS-WORKERS-XML tests=3 skipped=0 errors=0 failures=0`
+  و `P1-REDIS-WORKERS=PASS`. Scope دقیق: **claim/lease/reclaim semantics؛ مالکیت lease
+  سنجیده نشده (SEC-004)؛ handler فقط‌برای‌تست؛ بدون handler تولیدی**. `P1-RESTORE` همچنان
+  BLOCKED است.
+- تست‌ها: دو worker هم‌زمان با barrier و ده event synthetic، reclaim بدون sleep با timestamp
+  قدیمی که admin ثبت کرد، و یک تست جدا برای `mark_failed`/`backoff` چون مسیر آن از قبل
+  `CAST(:delay AS interval)` داشت. cleanup فقط admin و فقط شناسه‌های ثبت‌شدهٔ همان تست بود.
+- **مسیر reclaim روی PostgreSQL واقعی هیچ‌وقت کار نمی‌کرد و در PR2-D کشف و اصلاح شد.** قبل از
+  fix گروه `tests=3 skipped=0 errors=0 failures=1` داشت؛ دو-worker و mark-failed PASS و
+  reclaim با `asyncpg.exceptions.UndefinedFunctionError: timestamp with time zone < interval`
+  FAIL شدند. `f4527e7` فقط `CAST(:age AS interval)` را در
+  `app/entrypoints/workers/outbox_runner.py` اضافه کرد؛ هیچ schema یا migration تغییر نکرد.
+- بعد از fix گروه کامل و gate green شدند. Red receipt در `evidence/PR2-D-RED-RECLAIM.md` است.
+  کنترل منفی خارجی با حذف شرط status از SQL claim، تست دو-worker را با claim تکراری/timeout
+  شکست داد و سپس copy/plugin حذف شدند.
+- SEC-004 experiment: **YES**. سناریو: worker قدیمی handler را pause کرد، row reclaim شد،
+  worker جدید همان row را گرفت، سپس release worker قدیمی باعث شد `mark_delivered` آن row را
+  پیش از پایان worker جدید `delivered` کند. این خارج از Scope gate است و SEC-004 مانع باز هر
+  provider واقعی می‌ماند؛ اصلاح ownership در این PR انجام نشد.
+
+#### فهرست اولیهٔ read-only برای TEST-002
+
+هیچ اصلاح دیگری بر اساس این فهرست انجام نشد:
+
+1. `app/entrypoints/workers/outbox_runner.py:27-28` — `delivering_at < now() - :age` با
+   `age: timedelta`; **بدون type صریح**؛ در PR2-D شکست واقعی داشت و با `CAST(:age AS interval)`
+   اصلاح شد.
+2. `app/core/outbox_dispatch.py:78-83` — `available_at = now() + CAST(:delay AS interval)` با
+   `delay` حاصل از `backoff()`؛ **type صریح دارد** و در تست mark-failed سبز بود.
+
+SQLهای raw دیگر در `app/` که فقط `now()` ثابت دارند (`revoked_at=now()`, شرط‌های expiry،
+`delivering_at=now()` و timestampهای server-default) پارامتر زمان‌دار ندارند و در این فهرست
+نیامدند. `make_interval` یا SQL raw دیگری با `now()` و پارامتر زمان‌دار پیدا نشد.
 
 ### PR2-E — restore با pg_dump/pg_restore
 
@@ -223,6 +245,7 @@ admin غیر-superuser بعد از `PR2-E` و پس از تصمیم طراحی ج
 
 ## قدم بعدی رسمی
 
-**`PR2-C — بازبینی/push و Linux CI receipt برای role privilege probe و catalog sweep`**؛
-پیاده‌سازی محلی در `d12092d` انجام شده و push/PR فقط با اقدام صاحب پروژه انجام می‌شود؛
-در این جلسه push نمی‌شود. پس از receipt و review، `PR2-D` بستهٔ بعدی است.
+**`PR2-E — restore با pg_dump/pg_restore`**؛
+PR2-D در local disposable green شده، اما Linux CI و review مستقل آن هنوز pending هستند. پس از
+receipt/review، PR2-E شروع می‌شود. SEC-004 تا طراحی ownership برای هر provider واقعی مانع باز
+می‌ماند و `P1-RESTORE` هنوز BLOCKED است.
