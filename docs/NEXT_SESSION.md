@@ -2,7 +2,7 @@
 
 **اولین کار جلسه بعد:** دو commit شاخهٔ `stg-001-pr2b-race` را بازبینی و evidence
 اجرای مستقل connectivity و race در CI لینوکسی GitHub را ثبت کنید؛ push و PR با صاحب
-پروژه است. تست/gate در `804224e` ثبت شد؛ PR2-A در `main` با `3700466` ادغام شده است.
+پروژه است. تست/gate در `9a4914c` ثبت شد؛ PR2-A در `main` با `3700466` ادغام شده است.
 تمرین Docker PR2-B موفق بود، اما CI/review جدید آن هنوز pending و Phase 1 `PARTIAL` است.
 
 این سند برنامهٔ جاری PR2 است. تاریخچهٔ STEP-000 و برنامهٔ اجرایی PR1 در
@@ -47,7 +47,7 @@ pytest یا harness مشخص خود را دارند. `staging_gate.sh` باید 
 sanitized در evidence ثبت می‌شوند.
 
 helper مشترک فعلی `run_pytest_group <gate-name> <minimum-tests> <test-files...>` است:
-connectivity با همان دو فایل قبلی حداقل 3 case و race حداقل 2 case دارد؛ هر دو به
+connectivity با همان دو فایل قبلی حداقل 3 case و race حداقل 3 case دارد؛ هر دو به
 pytest exit=0 و JUnit معتبر با skipped/errors/failures=0 نیاز دارند. وضعیت از متن log
 استخراج نمی‌شود. XML و خروجی موقت در trap پاک و فقط tail redacted چاپ می‌شوند.
 
@@ -64,29 +64,34 @@ pytest exit=0 و JUnit معتبر با skipped/errors/failures=0 نیاز دار
 - پذیرش: دو round-trip واقعی، بدون mock/skip، خروجی sanitized.
 - وضعیت: PR2-A در PR #3 با `3700466` ادغام شد و pull از `main` تأیید شد. تمرین اولیه
   3/80 passed داشت؛ در PR2-B connectivity دوباره 3 passed و full enabled برابر
-  82 passed شد، بدون skip. فایل‌های connectivity، fixture مشترک و Scope/status
+  83 passed شد، بدون skip. فایل‌های connectivity، fixture مشترک و Scope/status
   ردیف `P1-INTEGRATION` تغییر نکرده‌اند؛ receipt تازهٔ CI در این جلسه جمع‌آوری نشد.
 - توقف/خطر: timeout، permission یا اتصال ناموفق؛ سرویس و exception type گزارش و PR
   متوقف شود.
 
 ### PR2-B — race فرم یک‌بارمصرف
 
-- پیاده‌سازی: دقیقاً دو تست در `tests/integration/test_one_time_form_race.py`، با fixture
-  file-local و بدون تغییر `app/`، migration، schema یا workflow؛ تست/gate در `804224e`.
+- پیاده‌سازی: دقیقاً سه تست در `tests/integration/test_one_time_form_race.py`، با fixture
+  file-local و بدون تغییر `app/`، migration، schema یا workflow؛ تست/gate در `9a4914c`.
 - race: 20 تکرار با فرم تازه، token و subject/owner تصادفی، purpose=`credential_entry`،
   owner_type=`social_account` و expiry آینده. دو session قبل از barrier دو connection
   واقعی با PID متفاوت و `current_user=session_user=sentinel_app` می‌گیرند؛ هر دو commit
   می‌شوند، دقیقاً یک `ConsumedForm` و یک `None` و سپس consumed_at غیرNULL دیده می‌شود.
-- replay/expiry: consume اولیه commit، تکرار آن و فرم منقضی رد می‌شوند؛ expired row
-  موجود و consumed_at آن NULL می‌ماند.
+- replay/expiry: purpose معتبر اما نادرست `social_oauth` نتیجهٔ خالی می‌دهد و consumed_at
+  را NULL نگه می‌دارد؛ purpose درست `credential_entry` هنوز برنده می‌شود. consume تکراری
+  و فرم منقضی رد می‌شوند؛ expired row موجود و consumed_at آن NULL می‌ماند.
+- overlap: تراکنش A consume را بدون commit نگه می‌دارد، B روی connection مستقل همان consume
+  را شروع می‌کند؛ admin با `pg_stat_activity` و `wait_event_type='Lock'`، `usename='sentinel_app'`
+  و datname فعلی، انتظار واقعی lock را می‌بیند. بعد A commit می‌کند و A تنها winner و B خالی
+  است؛ هر دو commit و consumed_at بعدی بررسی می‌شوند. polling فقط timeout و `sleep(0)` دارد.
 - cleanup: نقش runtime عمداً DELETE ندارد؛ hashها قبل از commit ثبت و فقط همان hashها
   با `MIGRATION_DATABASE_URL` و نقش واقعی admin پاک می‌شوند؛ بعد از commit شمارش صفر
   بررسی می‌شود. missing env/service در حالت فعال fail است، نه skip؛ هیچ token/DSN چاپ نشود.
-- CI/gate: pytest مستقل با حداقل 2 case و skipped/errors/failures=0؛ Scope برابر
-  `one-time form consume; 20 concurrent pairs, exactly one winner each; PostgreSQL; no HTTP`.
-- شاهد محلی: 2 passed؛ در هر اجرای race، 20 winner و 20 loser؛ full enabled برابر
-  82 passed؛ همه بدون skip. کنترل منفی با کپی بیرون repo و حذف guard، خود تست را با
-  `winners=2, losers=0` رد کرد؛ اجرای primitive اصلی دوباره PASS شد. gate عادی `PARTIAL`
+- CI/gate: pytest مستقل با حداقل 3 case و skipped/errors/failures=0؛ Scope برابر
+  `one-time form consume; 20 barrier-synchronized pairs + 1 lock-wait overlap case, exactly one winner each; PostgreSQL; no HTTP`.
+- شاهد محلی: 3 passed؛ 20 winner و 20 loser در جفت‌ها و overlap با lock واقعی؛ full enabled
+  برابر 83 passed؛ همه بدون skip. کنترل منفی با کپی بیرون repo و حذف guard، هم تست barrier
+  و هم overlap را با `winners=2, losers=0` رد کرد؛ اجرای primitive اصلی دوباره PASS شد. gate عادی `PARTIAL`
   با 4 BLOCKED و gate تحت کنترل منفی `FAIL` داشت. نسخه‌های موقت حذف شدند.
 - `P1-REDIS-WORKERS` و `P1-RESTORE` همچنان BLOCKED هستند. CI/review مستقل PR2-B pending
   است؛ PASS محلی storage، HTTP/CSRF/authorization/encryption یا production readiness نیست.
@@ -142,14 +147,16 @@ pytest exit=0 و JUnit معتبر با skipped/errors/failures=0 نیاز دار
 
 - این مسیر فقط تمرین محلی است؛ شاهد نهایی فقط CI لینوکسی GitHub است.
 - ابتدا فقط‌خوانی اجرا کنید: `docker --version`. در این workspace Docker در دسترس است؛
-  تمرین‌های محلی PR2-A و PR2-B اجرا و containerها و volumeهای موقت پس از کار حذف شدند.
+  تمرین‌های محلی PR2-A و PR2-B اجرا شدند؛ پس از هر run هر container با
+  `docker rm -fv <container>` پاک و فقط volumeهای ساخته‌شدهٔ همان run حذف شدند.
 - PostgreSQL 16 و Redis 7 را فقط روی `127.0.0.1` publish کنید؛ port را روی public
   interface باز نکنید.
 - passwordها در هر shell/run تصادفی ساخته شوند و فقط در environment همان shell بمانند؛
   آن‌ها را در `.env`، فایل موقت، log یا commit ننویسید.
 - فقط database، key و payload کاملاً ساختگی استفاده شود؛ credential یا دادهٔ واقعی ممنوع است.
-- بعد از کار، containerها و volumeهای disposable را حتی پس از failure پاک کنید؛ dump/key
-  محلی را نیز حذف کنید.
+- بعد از کار، حتی پس از failure، دقیقاً همان containerهای run را با
+  `docker rm -fv <container>` پاک کنید؛ فقط volumeهایی را حذف کنید که همان run ساخته است.
+  به volumeهای قدیمی یا نامرتبط دست نزنید؛ dump/key محلی را نیز حذف کنید.
 - اگر Docker، image، ابزار client یا سرویس در دسترس نبود، تست را skip نکنید؛ محدودیت را
   گزارش و gate را `BLOCKED` نگه دارید.
 
@@ -174,12 +181,15 @@ PostgreSQL 16 باشد؛ wrapper و secret در repo ذخیره نشوند.
    را در آن بردارید؛ فایل اصلی محصول تغییر نکند.
 2. یک plugin موقت pytest، مرجع `consume_form` در ماژول تست race را با آن کپی جایگزین کند؛
    خود تست `test_one_time_form_consume_race` اجرا شود، نه صرفاً یک SQL نمایشی.
-3. انتظار: exit غیرصفر، failure خود تست و شمارش `winners=2, losers=0`؛ cleanup باید حتی
-   در failure فقط فرم‌های ثبت‌شدهٔ همان تست را حذف کند. در اجرای group کاملِ معیوب،
-   race و replay رد شدند و JUnit دو failure داد؛ connectivity همچنان PASS بود.
-4. بدون plugin دوباره تست‌ها را اجرا و PASS تأیید کنید؛ کپی، plugin، گزارش و runner
+3. انتظار: exit غیرصفر، failure خود تست و شمارش `winners=2, losers=0` برای تست barrier و
+   تست lock-wait؛ cleanup باید حتی در failure فقط فرم‌های ثبت‌شدهٔ همان تست را حذف کند.
+   در اجرای group کاملِ معیوب، connectivity همچنان PASS است اما race سه‌تایی رد می‌شود.
+4. بدون plugin دوباره هر سه تست race را اجرا و PASS تأیید کنید؛ کپی، plugin، گزارش و runner
    موقت را پاک کنید و نبودشان در diff/commit را بررسی کنید. کنترل منفی production را
    تغییر نمی‌دهد و هرگز در CI عادی فعال نمی‌ماند.
+
+در این run از `docker rm -fv` برای containerها استفاده کنید. فقط volumeهای ایجادشده در همان
+run مجاز به حذف‌اند؛ volumeهای قدیمی workspace را پاک نکنید.
 
 ## ترتیب و شرط موفقیت
 

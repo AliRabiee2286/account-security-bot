@@ -80,10 +80,12 @@ one winner and one loser, with committed `consumed_at` set. The second test reje
 expired forms. Admin cleanup deletes only that test's registered hashes and verifies no rows
 remain; runtime DELETE is intentionally forbidden.
 
-Local evidence: connectivity **3 passed**, race **2 passed**, full enabled suite **82 passed**,
-all with zero skips. A temporary unguarded consume copy made the actual race test fail with
-two winners; the copy was deleted and is not committed. Scope is PostgreSQL storage only,
-not HTTP, CSRF, authorization, encryption, or end-to-end delivery. See
+Local evidence for the updated group: connectivity **3 passed**, race **3 passed**, full
+enabled suite **83 passed**, all with zero skips. The overlap test
+observes a real PostgreSQL `Lock` wait through `pg_stat_activity` before A commits; no guessed
+sleep is used. A temporary unguarded consume copy makes both race shapes fail with two winners;
+the copy is deleted and is not committed. Scope is PostgreSQL storage only, not HTTP, CSRF,
+authorization, encryption, or end-to-end delivery. See
 `tests/integration/README.md` and `evidence/PHASE1_EVIDENCE_TEMPLATE.md` for details.
 
 ## Authentication gate

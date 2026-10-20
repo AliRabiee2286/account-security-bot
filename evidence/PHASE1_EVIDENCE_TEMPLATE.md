@@ -67,7 +67,7 @@ Phase 1 remains `PARTIAL`; this rehearsal does not close the other blocked gates
 ## PR2-B local verification — 2026-10-19, Asia/Tehran
 
 Branch: `stg-001-pr2b-race`, created after `git pull --ff-only origin main` at `3700466`.
-Implementation commit: `804224e` (`test: add one-time form race integration gate`).
+Implementation commit: `9a4914c` (`test: verify one-time form lock overlap`).
 These are local Docker results, not a GitHub Actions run or independent reviewer approval.
 No push, product changes, migration changes, or workflow changes were made for this package.
 
@@ -75,18 +75,19 @@ No push, product changes, migration changes, or workflow changes were made for t
 |---|---|---|
 | Disposable services and migration | PASS | PostgreSQL 16 + Redis 7; authenticated TCP; loopback-only ports; random in-memory/process-environment passwords; head `0007`; admin superuser, runtime non-superuser |
 | Connectivity, independent pytest | PASS | `tests=3 skipped=0 errors=0 failures=0`, exit 0; original files and `P1-INTEGRATION` scope unchanged |
-| Race/replay/expiry, independent pytest | PASS | `tests=2 skipped=0 errors=0 failures=0`, exit 0 |
+| Race/overlap/replay/expiry, independent pytest | PASS | `tests=3 skipped=0 errors=0 failures=0`, exit 0 |
 | Concurrent pairs | PASS | 20 fresh forms; 20 winners + 20 losers; exactly one each per pair; distinct backend PIDs and actual runtime role; 40 consumer commits; 20 non-NULL post-commit reads |
-| Replay and expiry | PASS | Initial consume committed; consumed replay and expired form rejected; expired row remains unconsumed |
+| Lock-wait overlap | PASS | A held the row lock; admin observed B with `usename=sentinel_app`, current datname, distinct observer PID and `wait_event_type=Lock`; A committed the sole winner, B returned empty and committed |
+| Purpose, replay and expiry | PASS | Wrong valid purpose `social_oauth` left `consumed_at` NULL; correct `credential_entry` won; replay and expired form rejected; expired row remains unconsumed |
 | Scoped admin cleanup | PASS | Runtime DELETE privilege is false; fixture deletes only registered hashes, commits and reads back zero; an unrelated synthetic sentinel row survived successful and failed runs |
-| Actual-test negative control | PASS (expected test failure) | External `consume_form` copy without `consumed_at IS NULL`: actual race test exit 1, `tests=1 skipped=0 errors=0 failures=1`, assertion `winners=2, losers=0` |
-| Original-code rerun after negative control | PASS | 2 passed, zero skips/errors/failures; 20 pairs again produced one winner each |
-| Full enabled pytest | PASS | 82 passed; zero skips/errors/failures |
+| Actual-test negative control | PASS (expected test failure) | External `consume_form` copy without `consumed_at IS NULL`: barrier and lock-wait tests fail with `winners=2, losers=0`; the lock-wait run was `tests=1 skipped=0 errors=0 failures=1` |
+| Original-code rerun after negative control | PASS | 3 passed, zero skips/errors/failures; 20 pairs and the overlap case again produced one winner each |
+| Full enabled pytest | PASS | 83 passed; zero skips/errors/failures |
 | Enabled missing-env / unavailable-service probes | PASS (expected setup errors) | Each invocation: `tests=2 skipped=0 errors=2 failures=0`, nonzero exit; no DSN/password emitted |
-| Complete staging gate | PASS (local executable gates) | Exit 0; integration and race each have pytest/XML exit 0; summary `PARTIAL`, 4 BLOCKED/NOT_RUN gates: SECURITY, WEBHOOK-DELIVERY, REDIS-WORKERS, RESTORE |
-| Staging gate under negative-control injection | PASS (expected gate failure) | Connectivity still exit 0 and 3 clean cases; race pytest/XML exit 1, `tests=2 skipped=0 errors=0 failures=2`; summary `FAIL`, `P1-RACE=FAIL` |
+| Complete staging gate | PASS (local executable gates) | Exit 0; integration XML `tests=3`, race XML `tests=3`, all zero skip/error/failure; summary `PARTIAL`, 4 BLOCKED/NOT_RUN gates: SECURITY, WEBHOOK-DELIVERY, REDIS-WORKERS, RESTORE |
+| Staging gate under negative-control injection | PASS (expected gate failure) | Connectivity still exit 0 and 3 clean cases; lock-wait negative XML `tests=1 skipped=0 errors=0 failures=1`, assertion `winners=2, losers=0`; summary would be `FAIL`, `P1-RACE=FAIL` |
 | JUnit and runner boundaries | PASS | 16 validator scenarios, including valid reports, minimum counts, skip/error/failure, malformed/empty/nested/inconsistent reports; invalid helper inputs and `mktemp` failure rejected even inside `if` |
-| Ordinary `uv run pytest -q` | PASS (offline scope) | 77 passed, 5 skipped deliberately with integration disabled; not runtime evidence |
+| Ordinary `uv run pytest -q` | PASS (offline scope) | 77 passed, 6 skipped deliberately with integration disabled; not runtime evidence |
 | `uv run ruff check .` | PASS | No violations |
 | `uv run ruff format --check .` | PASS | 167 files already formatted |
 | `uv run mypy app` | PASS | 100 source files, no issues |
@@ -99,7 +100,7 @@ Successful group diagnostics:
 P1-INTEGRATION-DIAGNOSTIC=pytest_exit=0 xml_exit=0
 P1-INTEGRATION-XML tests=3 skipped=0 errors=0 failures=0
 P1-RACE-DIAGNOSTIC=pytest_exit=0 xml_exit=0
-P1-RACE-XML tests=2 skipped=0 errors=0 failures=0
+P1-RACE-XML tests=3 skipped=0 errors=0 failures=0
 one-time-form race: pairs=20 winners=20 losers=20 consumed_after_commit=20
 ```
 
@@ -121,7 +122,7 @@ Its two-winner result is intentional; the original primitive never produced mult
 in these runs. If it does, stop and report `app/core/one_time_form_store.py:61-78` instead of
 patching product code or schema in PR2-B.
 
-`P1-RACE` scope: **one-time form consume; 20 concurrent pairs, exactly one winner each;
-PostgreSQL; no HTTP**. This is not HTTP/CSRF/authorization/encryption evidence. Linux CI
+`P1-RACE` scope: **one-time form consume; 20 barrier-synchronized pairs + 1 lock-wait overlap
+case, exactly one winner each; PostgreSQL; no HTTP**. This is not HTTP/CSRF/authorization/encryption evidence. Linux CI
 for PR2-B and independent review remain pending; Phase 1 is still `PARTIAL` and Phase 2
 is still `BLOCKED`. `P1-REDIS-WORKERS`, `P1-RESTORE`, and `SEC-004` are not closed.
