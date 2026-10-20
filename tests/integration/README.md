@@ -78,6 +78,38 @@ The local negative control injected an external copy of `consume_form` with only
 pass. All mutation/plugin files are outside the repository, are deleted with the disposable
 containers, and no product patch is part of the control.
 
+## PR2-C: runtime role privilege and catalog sweep
+
+```bash
+RUN_INTEGRATION=1 uv run pytest -q tests/integration/test_runtime_role_privileges.py
+```
+
+- Provision `sentinel_app` and run all migrations as `sentinel_admin` before enabling the group.
+  `DATABASE_URL` must use `sentinel_app`; `MIGRATION_DATABASE_URL` must use
+  `sentinel_admin`. The test verifies `current_user=session_user` for both connections and
+  checks that the admin and runtime connections target the same database.
+- The first test performs an allowed `SELECT` and a real `DELETE ... WHERE false` attempt on
+  `social.credentials`, `identity.sessions`, `identity.mfa_credentials`, and
+  `identity.approval_requests`. Every rejection must be PostgreSQL `SQLSTATE 42501`; a trigger
+  rejection is not accepted as a privilege result.
+- The second test queries PostgreSQL catalogs with the runtime role name. It requires all six
+  application schemas, the four sensitive tables and `audit.audit_events`, then sweeps every
+  ordinary or partitioned table in those schemas. The effective runtime role must have no
+  `DELETE` or `TRUNCATE` anywhere, no `UPDATE` on audit tables, and no `CREATE` on application
+  schemas. It also verifies restricted runtime role attributes and membership in
+  `sentinel_app_role`.
+- `staging_gate.sh` runs this file independently as `P1-ROLE-PRIVILEGES` with a minimum of two
+  cases. `P1-ROLE` is `PASS` only when this JUnit-checked group and the existing audit DELETE
+  probe both pass with zero skips, errors, and failures. Output contains counts and sanitized
+  table/schema names only; DSNs and passwords are never printed.
+- PR2-C changes only the role integration test and gate wiring. A temporary grant of `DELETE`
+  or `TRUNCATE` is an expected negative control in disposable PostgreSQL: the relevant test
+  must fail, the grant must be revoked, and the restored group must pass. A temporary
+  `TRUNCATE` on `audit.audit_events` must produce trigger `SQLSTATE P0001`, which is explicitly
+  not accepted as a privilege denial.
+- This proves PostgreSQL role separation only. It does not prove a non-superuser migration
+  role, HTTP authorization/CSRF, encryption, provider delivery, or production readiness.
+
 Required later cases: rollback on failed audit write; outbox two-worker claim has one winner;
 stuck delivery reclaim; HTTP webhook valid/invalid; encrypted credential cannot be read as
 plaintext; restore drill. See `docs/NEXT_SESSION.md` for the remaining PR boundaries.

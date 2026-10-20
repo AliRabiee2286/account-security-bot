@@ -98,6 +98,24 @@ the copy is deleted and is not committed. Scope is PostgreSQL storage only, not 
 authorization, encryption, or end-to-end delivery. See
 `tests/integration/README.md` and `evidence/PHASE1_EVIDENCE_TEMPLATE.md` for details.
 
+### Runtime role privilege gate (PR2-C)
+
+The PR2-C implementation is on the local branch `stg-001-pr2c-roles` at commit `d12092d`;
+it has not been pushed or merged. The independent role group now checks the actual runtime
+connection against `social.credentials`, `identity.sessions`, `identity.mfa_credentials`, and
+`identity.approval_requests`: each allowed `SELECT` succeeds and each `DELETE` is rejected with
+SQLSTATE `42501`. A separate admin catalog sweep covers all six application schemas and every
+ordinary/partitioned table, rejecting runtime `DELETE`/`TRUNCATE`, audit `UPDATE`, schema
+`CREATE`, unrestricted runtime role attributes, and missing `sentinel_app_role` membership.
+
+Local PostgreSQL 16 + Redis 7 disposable verification passed the two role tests with
+`tests=2 skipped=0 errors=0 failures=0`, including temporary `DELETE` and `TRUNCATE` negative
+controls and a trigger control that returned `P0001` rather than a privilege denial. The complete
+local staging gate exited 0 with `P1-ROLE=PASS`, `P1-ROLE-PRIVILEGES` at two clean cases,
+`P1-INTEGRATION` at three clean cases, and `P1-RACE` at three clean cases. The overall result
+remains `PARTIAL` because SECURITY, real webhook delivery, two-worker Redis coverage, and
+restore remain blocked; Linux CI evidence and independent review for PR2-C are still pending.
+
 ## Authentication gate
 
 OAuth PKCE primitives, signed Telegram Mini App `initData` validation, and an explicit
