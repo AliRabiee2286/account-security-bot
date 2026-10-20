@@ -221,9 +221,10 @@ integration، `RUN_INTEGRATION=1`، race/reclaim، restore و cleanup اضافه
 
 - برای gate `P1-REDIS-WORKERS`، اجرای `run_once()` با handler فقط‌برای‌تست کافی است؛
   این تست semantics مربوط به **claim/lease/reclaim** را اثبات می‌کند.
-- Scope این تصمیم: `claim/lease/reclaim semantics؛ بدون handler تولیدی`. خالی بودن
-  `HANDLERS` در worker تولیدی باقی می‌ماند و این gate نباید delivery به provider یا
-  رفتار handler تولیدی را PASS اعلام کند.
+- Scope این تصمیم: `claim/lease/reclaim semantics; lease ownership NOT enforced —
+  stale-worker overwrite confirmed locally (SEC-004); test-only handler; no production
+  handler`. خالی بودن `HANDLERS` در worker تولیدی باقی می‌ماند و این gate نباید delivery
+  به provider یا رفتار handler تولیدی را PASS اعلام کند.
 
 ### P1-RESTORE — محدودهٔ restore در CI
 

@@ -128,8 +128,9 @@ RUN_INTEGRATION=1 uv run pytest -q tests/integration/test_outbox_two_workers.py
   only the admin connection and only the IDs registered by the current test. No payload, DSN,
   password, token, or row identifier is printed.
 - `staging_gate.sh` runs this file independently as `P1-REDIS-WORKERS` with a minimum of two
-  cases. Its exact scope is: **claim/lease/reclaim semantics; lease ownership not measured
-  (SEC-004); test-only handler; no production handler**. `P1-RESTORE` remains BLOCKED.
+  cases. Its exact scope is: **claim/lease/reclaim semantics; lease ownership NOT enforced —
+  stale-worker overwrite confirmed locally (SEC-004); test-only handler; no production
+  handler**. `P1-RESTORE` remains BLOCKED.
 - Before the fix, the group produced `tests=3 skipped=0 errors=0 failures=1`: the two-worker
   case and mark-failed case passed, while reclaim failed with
   `asyncpg.exceptions.UndefinedFunctionError` because `now() - :age` was untyped. The

@@ -59,8 +59,9 @@
   < interval` شکست خورد. Commit `f4527e7` فقط `CAST(:age AS interval)` را به
   `app/entrypoints/workers/outbox_runner.py` اضافه کرد.
 - بعد از fix، `P1-REDIS-WORKERS-XML tests=3 skipped=0 errors=0 failures=0` و
-  `P1-REDIS-WORKERS=PASS` ثبت شد. Scope عمداً فقط claim/lease/reclaim semantics با handler
-  تستی است؛ مالکیت lease سنجیده نشده و SEC-004 همچنان مانع provider واقعی است.
+  `P1-REDIS-WORKERS=PASS` ثبت شد. Scope دقیق: **claim/lease/reclaim semantics; lease ownership
+  NOT enforced — stale-worker overwrite confirmed locally (SEC-004); test-only handler; no
+  production handler**. SEC-004 همچنان مانع provider واقعی است.
 - آزمایش SEC-004 نتیجهٔ **YES** داد: worker قدیمی، پس از reclaim و گرفتن lease توسط worker
   جدید، می‌تواند `mark_delivered` را اجرا کند و row را پیش از پایان worker جدید به `delivered`
   ببرد. این رفتار فقط گزارش شد و در PR2-D اصلاح نشد.

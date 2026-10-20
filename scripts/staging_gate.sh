@@ -25,7 +25,7 @@ P1_REDIS_WORKERS_STATUS=BLOCKED
 P1_RESTORE_STATUS=BLOCKED
 
 P1_ROLE_SCOPE='runtime role: DELETE denied (42501) on audit + 4 sensitive tables; catalog sweep over all app-schema tables: no DELETE/TRUNCATE, no UPDATE on audit; no CREATE on schemas; role attributes restricted'
-P1_REDIS_WORKERS_SCOPE='claim/lease/reclaim semantics; lease ownership not measured (SEC-004); test-only handler; no production handler'
+P1_REDIS_WORKERS_SCOPE='claim/lease/reclaim semantics; lease ownership NOT enforced — stale-worker overwrite confirmed locally (SEC-004); test-only handler; no production handler'
 
 redact_file() {
   sed -E \

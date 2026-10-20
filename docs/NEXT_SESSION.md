@@ -132,12 +132,14 @@ pytest exit=0 و JUnit معتبر با skipped/errors/failures=0 نیاز دار
 
 - اثبات: دو `run_once()` برای یک event synthetic فقط یک claim و یک invocation بدهند؛
   row به `delivered` برسد و delivery قدیمی از `delivering` به `pending` reclaim شود.
-- Scope: `claim/lease/reclaim semantics؛ مالکیت lease سنجیده نشده (SEC-004)؛ بدون handler تولیدی`.
+- Scope: `claim/lease/reclaim semantics; lease ownership NOT enforced — stale-worker overwrite
+  confirmed locally (SEC-004); test-only handler; no production handler`.
   handler محلیِ فقط‌برای‌تست مجاز است؛ `HANDLERS` تولیدی خالی است و PASS فقط همین
   semantics را ثابت می‌کند، نه handler تولیدی.
 - CI/gate: اجرای مستقل pytest با `P1-REDIS-WORKERS-XML tests=3 skipped=0 errors=0 failures=0`
-  و `P1-REDIS-WORKERS=PASS`. Scope دقیق: **claim/lease/reclaim semantics؛ مالکیت lease
-  سنجیده نشده (SEC-004)؛ handler فقط‌برای‌تست؛ بدون handler تولیدی**. `P1-RESTORE` همچنان
+  و `P1-REDIS-WORKERS=PASS`. Scope دقیق: **claim/lease/reclaim semantics; lease ownership NOT
+  enforced — stale-worker overwrite confirmed locally (SEC-004); test-only handler; no production
+  handler**. `P1-RESTORE` همچنان
   BLOCKED است.
 - تست‌ها: دو worker هم‌زمان با barrier و ده event synthetic، reclaim بدون sleep با timestamp
   قدیمی که admin ثبت کرد، و یک تست جدا برای `mark_failed`/`backoff` چون مسیر آن از قبل
