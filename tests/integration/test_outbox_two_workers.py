@@ -10,7 +10,7 @@ from collections import Counter
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextvars import ContextVar
 from dataclasses import dataclass, field
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from uuid import UUID, uuid4
 
@@ -214,6 +214,8 @@ async def _insert_message(
     payload: dict[str, object],
     status: str = "pending",
     attempts: int = 0,
+    available_at: datetime | None = None,
+    delivering_at: datetime | None = None,
 ) -> UUID:
     message_id = uuid4()
     database.register(message_id)
@@ -224,9 +226,13 @@ async def _insert_message(
             available_at, delivered_at, delivering_at
         )
         VALUES (
-            $1, $2, $3::jsonb, $4, $5, $6, now(),
+            $1, $2, $3::jsonb, $4, $5, $6,
+            COALESCE($7::timestamptz, now()),
             CASE WHEN $5::varchar = 'delivered' THEN now() END,
-            CASE WHEN $5::varchar = 'delivering' THEN now() END
+            COALESCE(
+                $8::timestamptz,
+                CASE WHEN $5::varchar = 'delivering' THEN now() END
+            )
         )
         """,
         message_id,
@@ -235,6 +241,8 @@ async def _insert_message(
         f"pr2d-{uuid4()}",
         status,
         attempts,
+        available_at,
+        delivering_at,
     )
     return message_id
 
@@ -245,6 +253,7 @@ async def _fetch_outbox_state(
     return await database.admin_connection.fetch(
         """
         SELECT id, event_type, status, attempts,
+               available_at, delivering_at,
                available_at <= now() AS available,
                available_at > now() AS available_in_future,
                delivering_at IS NULL AS delivery_timestamp_clear,
@@ -258,6 +267,22 @@ async def _fetch_outbox_state(
     )
 
 
+async def _pending_claimable_non_test_count(
+    database: OutboxDatabase, synthetic_ids: list[UUID]
+) -> int:
+    count = await database.admin_connection.fetchval(
+        """
+        SELECT count(*)
+          FROM core.outbox
+         WHERE status = 'pending'
+           AND available_at <= now()
+           AND NOT (id = ANY($1::uuid[]))
+        """,
+        synthetic_ids,
+    )
+    return int(count or 0)
+
+
 async def test_two_workers_claim_each_synthetic_event_once(  # noqa: PLR0915 - explicit gate assertions
     outbox_database: OutboxDatabase,
 ) -> None:
@@ -269,12 +294,42 @@ async def test_two_workers_claim_each_synthetic_event_once(  # noqa: PLR0915 - e
         )
         for ordinal in range(EVENT_COUNT)
     ]
-    untouched_id = await _insert_message(
+    future_pending_id = await _insert_message(
         outbox_database,
-        event_type="existing.application.event",
-        payload={"case": "non-target"},
-        status="delivered",
-        attempts=7,
+        event_type="existing.application.future",
+        payload={"case": "future-pending"},
+        available_at=datetime.now(UTC) + timedelta(hours=1),
+    )
+    fresh_delivering_at = datetime.now(UTC)
+    fresh_delivering_id = await _insert_message(
+        outbox_database,
+        event_type="existing.application.delivering",
+        payload={"case": "fresh-delivering"},
+        status="delivering",
+        attempts=4,
+        delivering_at=fresh_delivering_at,
+    )
+    untouched_ids = [future_pending_id, fresh_delivering_id]
+    untouched_before = await _fetch_outbox_state(outbox_database, untouched_ids)
+    _require(len(untouched_before) == 2, "Untouched outbox state readback was incomplete")
+    untouched_before_by_id = {row["id"]: row for row in untouched_before}
+    _require(
+        untouched_before_by_id[future_pending_id]["status"] == "pending"
+        and untouched_before_by_id[future_pending_id]["available_in_future"]
+        and untouched_before_by_id[future_pending_id]["delivering_at"] is None,
+        "Future pending control row was not seeded correctly",
+    )
+    _require(
+        untouched_before_by_id[fresh_delivering_id]["status"] == "delivering"
+        and untouched_before_by_id[fresh_delivering_id]["attempts"] == 4
+        and untouched_before_by_id[fresh_delivering_id]["delivering_at"] is not None,
+        "Fresh delivering control row was not seeded correctly",
+    )
+
+    pending_non_test_count = await _pending_claimable_non_test_count(outbox_database, message_ids)
+    _require(
+        pending_non_test_count == 0,
+        f"Preflight found pending claimable non-synthetic rows: count={pending_non_test_count}",
     )
 
     counts: Counter[UUID] = Counter()
@@ -310,19 +365,29 @@ async def test_two_workers_claim_each_synthetic_event_once(  # noqa: PLR0915 - e
     try:
         async with asyncio.timeout(OPERATION_TIMEOUT):
             results = await asyncio.gather(*tasks, return_exceptions=True)
-    except BaseException:
+    except BaseException as error:
         for task in tasks:
             if not task.done():
                 task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
-        pytest.fail("Concurrent outbox workers did not finish within the timeout", pytrace=False)
+        pytest.fail(
+            "Concurrent outbox workers did not finish within the timeout; "
+            f"exception_type={type(error).__name__}",
+            pytrace=False,
+        )
 
-    if any(isinstance(result, BaseException) for result in results):
-        pytest.fail("Concurrent outbox worker operation failed", pytrace=False)
+    worker_exceptions = [result for result in results if isinstance(result, BaseException)]
+    if worker_exceptions:
+        exception_types = sorted({type(error).__name__ for error in worker_exceptions})
+        pytest.fail(
+            "Concurrent outbox worker operation failed; "
+            f"exception_types={','.join(exception_types)}",
+            pytrace=False,
+        )
 
-    states = await _fetch_outbox_state(outbox_database, [*message_ids, untouched_id])
+    states = await _fetch_outbox_state(outbox_database, [*message_ids, *untouched_ids])
     state_by_id = {row["id"]: row for row in states}
-    _require(len(state_by_id) == EVENT_COUNT + 1, "Outbox state readback was incomplete")
+    _require(len(state_by_id) == EVENT_COUNT + 2, "Outbox state readback was incomplete")
     _require(set(counts) == set(message_ids), "Synthetic handler coverage was incomplete")
     _require(
         all(counts[message_id] == 1 for message_id in message_ids),
@@ -345,15 +410,16 @@ async def test_two_workers_claim_each_synthetic_event_once(  # noqa: PLR0915 - e
             "Synthetic outbox row did not reach delivered with one attempt",
         )
 
-    untouched = state_by_id[untouched_id]
-    _require(
-        untouched["event_type"] == "existing.application.event"
-        and untouched["status"] == "delivered"
-        and untouched["attempts"] == 7
-        and untouched["delivery_timestamp_clear"]
-        and untouched["delivered_timestamp_set"],
-        "Non-target outbox row was claimed or changed",
-    )
+    for message_id in untouched_ids:
+        before = untouched_before_by_id[message_id]
+        after = state_by_id[message_id]
+        _require(
+            all(
+                before[field] == after[field]
+                for field in ("status", "attempts", "available_at", "delivering_at")
+            ),
+            "Non-target outbox row was claimed or changed",
+        )
     print(f"outbox two-workers: events={EVENT_COUNT} handler_calls={sum(counts.values())}")
 
 

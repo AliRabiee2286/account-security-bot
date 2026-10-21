@@ -25,7 +25,7 @@ P1_REDIS_WORKERS_STATUS=BLOCKED
 P1_RESTORE_STATUS=BLOCKED
 
 P1_ROLE_SCOPE='runtime role: DELETE denied (42501) on audit + 4 sensitive tables; catalog sweep over all app-schema tables: no DELETE/TRUNCATE, no UPDATE on audit; no CREATE on schemas; role attributes restricted'
-P1_REDIS_WORKERS_SCOPE='claim/lease/reclaim semantics; lease ownership NOT enforced — stale-worker overwrite confirmed locally (SEC-004); test-only handler; no production handler'
+P1_REDIS_WORKERS_SCOPE='claim/lease/reclaim semantics; two concurrent in-process workers; lease ownership NOT enforced — stale-worker overwrite confirmed locally (SEC-004); test-only handler; no production handler'
 
 redact_file() {
   sed -E \
@@ -433,7 +433,7 @@ else
   exit "$race_status"
 fi
 echo '== outbox claim/lease/reclaim =='
-if run_pytest_group P1-REDIS-WORKERS 2 tests/integration/test_outbox_two_workers.py; then
+if run_pytest_group P1-REDIS-WORKERS 3 tests/integration/test_outbox_two_workers.py; then
   P1_REDIS_WORKERS_STATUS=PASS
   echo "P1-REDIS-WORKERS=PASS scope=$P1_REDIS_WORKERS_SCOPE"
 else

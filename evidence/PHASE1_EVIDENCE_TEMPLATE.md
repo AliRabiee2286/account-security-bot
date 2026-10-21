@@ -13,7 +13,7 @@ Offline/static PASS is informative and does not close Phase 1.
 | Gate | Command / test | Result | Evidence link | Reviewer |
 |---|---|---|---|---|
 | P1-DB | `alembic upgrade head` from empty DB | BLOCKED | | |
-| P1-REDIS-WORKERS | claim/lease/reclaim semantics; lease ownership NOT enforced — stale-worker overwrite confirmed locally (SEC-004); test-only handler; no production handler | PASS (local; Linux CI/reviewer pending) | [PR2-D red reclaim receipt](PR2-D-RED-RECLAIM.md) | |
+| P1-REDIS-WORKERS | claim/lease/reclaim semantics; two concurrent in-process workers; lease ownership NOT enforced — stale-worker overwrite confirmed locally (SEC-004); test-only handler; no production handler | PASS (local; Linux CI/reviewer pending) | [PR2-D red reclaim receipt](PR2-D-RED-RECLAIM.md) | |
 | P1-CI | uv sync, ruff, mypy, import-linter, pytest | BLOCKED | | |
 | P1-RACE | 20 pairs + lock-wait overlap + replay/expiry; PostgreSQL; no HTTP | PASS (Linux CI; independent reviewer pending) | | |
 | P1-WEBHOOK | invalid secret 403, valid secret 200 | BLOCKED | | |
@@ -195,6 +195,7 @@ not a GitHub Actions run or independent reviewer approval. No push was performed
 | Cleanup | PASS | Every disposable container removed with `docker rm -fv`; admin cleanup was scoped to registered IDs; temporary mutation files and harnesses removed |
 
 The exact red receipt is in `evidence/PR2-D-RED-RECLAIM.md`. The outbox gate scope is
-**claim/lease/reclaim semantics; lease ownership NOT enforced — stale-worker overwrite confirmed
-locally (SEC-004); test-only handler; no production handler**. `P1-RESTORE` remains BLOCKED, and
+**claim/lease/reclaim semantics; two concurrent in-process workers; lease ownership NOT enforced
+— stale-worker overwrite confirmed locally (SEC-004); test-only handler; no production handler**.
+`P1-RESTORE` remains BLOCKED, and
 Linux CI/independent review for PR2-D are still pending.

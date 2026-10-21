@@ -139,7 +139,7 @@ The local disposable gate recorded:
 
 ```text
 P1-REDIS-WORKERS-XML tests=3 skipped=0 errors=0 failures=0
-P1-REDIS-WORKERS=PASS scope=claim/lease/reclaim semantics; lease ownership NOT enforced — stale-worker overwrite confirmed locally (SEC-004); test-only handler; no production handler
+P1-REDIS-WORKERS=PASS scope=claim/lease/reclaim semantics; two concurrent in-process workers; lease ownership NOT enforced — stale-worker overwrite confirmed locally (SEC-004); test-only handler; no production handler
 ```
 
 The first test used two concurrent `run_once()` workers, ten synthetic events, a local
