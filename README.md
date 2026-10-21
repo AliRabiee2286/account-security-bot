@@ -55,11 +55,11 @@ tests/               # unit and integration tests
 The offline foundation gate is green: the project has a checked-in `uv.lock`, strict typing,
 Ruff, import boundaries, unit tests, import smoke, migration/static validators, and offline
 security smoke. This does **not** make the project production-ready. Phase 1 is **PARTIAL**
-(see `docs/STATUS.md`). PR2-A is merged into `main` at `3700466`, and PR2-B is merged into
-`main` at `59a9da2`. Linux CI passed for PR2-B on commit `63a94e7`; the independent reviewer
-is still pending. Real
-Telegram delivery, two-worker outbox/reclaim, restore, and two-person security review remain
-open; local PASS does not close the release gate.
+(see `docs/STATUS.md`). PR2-A is merged into `main` at `3700466`, PR2-B at `59a9da2`, and
+PR2-C at `57d7a85`. Linux CI passed for PR2-C on commit `554335d`; the independent reviewer
+is still pending. Real Telegram delivery, restore, and two-person security review remain open;
+local PASS does not close the release gate. PR2-D has a local PostgreSQL/Redis PASS, but its
+Linux CI receipt and independent review are still pending.
 
 Run the complete environment gate only from `docs/STAGING_RUNBOOK.md`. Runtime uses
 `DATABASE_URL` with the least-privileged `sentinel_app` role; Alembic uses the separate
@@ -100,21 +100,69 @@ authorization, encryption, or end-to-end delivery. See
 
 ### Runtime role privilege gate (PR2-C)
 
-The PR2-C implementation is on the local branch `stg-001-pr2c-roles` at commit `d12092d`;
-it has not been pushed or merged. The independent role group now checks the actual runtime
+PR2-C is merged into `main` at `57d7a85`. Linux CI passed on implementation commit `554335d`:
+
+```text
+P1-ROLE-PRIVILEGES-XML tests=2 skipped=0 errors=0 failures=0
+P1-ROLE=PASS
+Result: PARTIAL — 4 gates BLOCKED/NOT_RUN
+```
+
+The independent role group checks the actual runtime
 connection against `social.credentials`, `identity.sessions`, `identity.mfa_credentials`, and
 `identity.approval_requests`: each allowed `SELECT` succeeds and each `DELETE` is rejected with
 SQLSTATE `42501`. A separate admin catalog sweep covers all six application schemas and every
 ordinary/partitioned table, rejecting runtime `DELETE`/`TRUNCATE`, audit `UPDATE`, schema
 `CREATE`, unrestricted runtime role attributes, and missing `sentinel_app_role` membership.
 
+See the [PR2-C Linux CI run](https://github.com/AliRabiee2286/account-security-bot/actions/runs/39386598021).
+SEC-003 is confirmed by Linux CI; final closure remains pending independent review.
 Local PostgreSQL 16 + Redis 7 disposable verification passed the two role tests with
 `tests=2 skipped=0 errors=0 failures=0`, including temporary `DELETE` and `TRUNCATE` negative
 controls and a trigger control that returned `P0001` rather than a privilege denial. The complete
 local staging gate exited 0 with `P1-ROLE=PASS`, `P1-ROLE-PRIVILEGES` at two clean cases,
 `P1-INTEGRATION` at three clean cases, and `P1-RACE` at three clean cases. The overall result
-remains `PARTIAL` because SECURITY, real webhook delivery, two-worker Redis coverage, and
-restore remain blocked; Linux CI evidence and independent review for PR2-C are still pending.
+was `PARTIAL` because SECURITY, real webhook delivery, and restore remained blocked at that
+stage; PR2-D adds the separate outbox-worker gate described below.
+
+### Outbox worker/reclaim gate (PR2-D)
+
+PR2-D is implemented locally on `stg-001-pr2d-outbox` in three focused commits:
+
+- `f4527e7` — `fix(outbox): cast interval parameter in reclaim_stuck` — the only product-code
+  change; `CAST(:age AS interval)` fixes the real PostgreSQL reclaim failure.
+- `f3f41ce` — two-worker, reclaim, and retry-timing integration tests plus the independent
+  `P1-REDIS-WORKERS` gate.
+- The documentation/evidence commit follows after final verification; nothing is pushed here.
+
+The local disposable gate recorded:
+
+```text
+P1-REDIS-WORKERS-XML tests=3 skipped=0 errors=0 failures=0
+P1-REDIS-WORKERS=PASS scope=claim/lease/reclaim semantics; two concurrent in-process workers; lease ownership NOT enforced — stale-worker overwrite confirmed locally (SEC-004); test-only handler; no production handler
+```
+
+The first test used two concurrent `run_once()` workers, ten synthetic events, a local
+test-only handler, and an untouched non-target row. The reclaim test seeded an old
+`delivering` row with admin, reclaimed it without sleep, and delivered it once. The third test
+covers the existing typed `mark_failed`/backoff interval path. Cleanup uses only
+`sentinel_admin` and registered IDs.
+
+Before the fix, the complete group was red: `tests=3`, `failures=1`, while the two-worker test
+and mark-failed test passed. The sanitized receipt is in
+`evidence/PR2-D-RED-RECLAIM.md`. A temporary claim mutation without the status predicate made
+the two-worker test fail by repeatedly claiming work; the mutation was external and deleted.
+
+The SEC-004 experiment confirmed **YES**: after reclaim, an old paused worker can still execute
+`mark_delivered` while a new worker holds the replacement lease, changing the row to
+`delivered` before the new worker finishes. Lease ownership is explicitly outside this gate and
+remains a release blocker for real providers.
+
+The initial read-only timed-SQL inventory found the failing untyped `now() - :age` in
+`app/entrypoints/workers/outbox_runner.py:27-28` and the already explicit
+`now() + CAST(:delay AS interval)` in `app/core/outbox_dispatch.py:78-83`. No other app raw SQL
+combining `now()` with a timed parameter was found. See `task_plan.md` TEST-002 and
+`docs/NEXT_SESSION.md` for the boundary and next package.
 
 ## Authentication gate
 

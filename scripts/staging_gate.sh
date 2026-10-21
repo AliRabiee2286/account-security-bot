@@ -25,6 +25,7 @@ P1_REDIS_WORKERS_STATUS=BLOCKED
 P1_RESTORE_STATUS=BLOCKED
 
 P1_ROLE_SCOPE='runtime role: DELETE denied (42501) on audit + 4 sensitive tables; catalog sweep over all app-schema tables: no DELETE/TRUNCATE, no UPDATE on audit; no CREATE on schemas; role attributes restricted'
+P1_REDIS_WORKERS_SCOPE='claim/lease/reclaim semantics; two concurrent in-process workers; lease ownership NOT enforced — stale-worker overwrite confirmed locally (SEC-004); test-only handler; no production handler'
 
 redact_file() {
   sed -E \
@@ -192,7 +193,7 @@ write_summary() {
       printf '| P1-WEBHOOK-GUARD | %s | function-level, no HTTP |\n' "$P1_WEBHOOK_GUARD_STATUS"
       printf '| P1-WEBHOOK-DELIVERY | %s | real Telegram delivery; synthetic token only loads Settings; no Telegram contact; outside PR1 |\n' "$P1_WEBHOOK_DELIVERY_STATUS"
       printf '| P1-RACE | %s | one-time form consume; 20 barrier-synchronized pairs + 1 lock-wait overlap case, exactly one winner each; PostgreSQL; no HTTP |\n' "$P1_RACE_STATUS"
-      printf '| P1-REDIS-WORKERS | %s | two-worker outbox/reclaim; test absent in PR1 |\n' "$P1_REDIS_WORKERS_STATUS"
+      printf '| P1-REDIS-WORKERS | %s | %s |\n' "$P1_REDIS_WORKERS_STATUS" "$P1_REDIS_WORKERS_SCOPE"
       printf '| P1-RESTORE | %s | backup/restore; test absent in PR1 |\n' "$P1_RESTORE_STATUS"
     } >> "$GITHUB_STEP_SUMMARY"
   fi
@@ -431,6 +432,15 @@ else
   echo 'P1-RACE=FAIL scope=one-time form consume; 20 barrier-synchronized pairs + 1 lock-wait overlap case, exactly one winner each; PostgreSQL; no HTTP' >&2
   exit "$race_status"
 fi
+echo '== outbox claim/lease/reclaim =='
+if run_pytest_group P1-REDIS-WORKERS 3 tests/integration/test_outbox_two_workers.py; then
+  P1_REDIS_WORKERS_STATUS=PASS
+  echo "P1-REDIS-WORKERS=PASS scope=$P1_REDIS_WORKERS_SCOPE"
+else
+  outbox_status=$?
+  P1_REDIS_WORKERS_STATUS=FAIL
+  echo "P1-REDIS-WORKERS=FAIL scope=$P1_REDIS_WORKERS_SCOPE" >&2
+  exit "$outbox_status"
+fi
 echo '== scenario coverage not implemented in PR1 =='
-echo 'P1-REDIS-WORKERS=BLOCKED no two-worker outbox/reclaim integration test exists in tests/'
 echo 'P1-RESTORE=BLOCKED no restore integration test/evidence harness exists in tests/'

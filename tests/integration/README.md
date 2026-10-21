@@ -69,8 +69,7 @@ and XML are removed on exit; XML counts, not log text, determine the result.
 
 Race scope: **one-time form consume; 20 barrier-synchronized pairs + 1 lock-wait overlap case,
 exactly one winner each; PostgreSQL; no HTTP**. This does not establish
-HTTP/CSRF/authorization, encryption, or provider behavior. `P1-REDIS-WORKERS` and
-`P1-RESTORE` remain BLOCKED.
+HTTP/CSRF/authorization, encryption, or provider behavior. `P1-RESTORE` remains BLOCKED.
 
 The local negative control injected an external copy of `consume_form` with only
 `consumed_at IS NULL` removed. The barrier race and the lock-wait overlap test both fail with
@@ -110,6 +109,41 @@ RUN_INTEGRATION=1 uv run pytest -q tests/integration/test_runtime_role_privilege
 - This proves PostgreSQL role separation only. It does not prove a non-superuser migration
   role, HTTP authorization/CSRF, encryption, provider delivery, or production readiness.
 
-Required later cases: rollback on failed audit write; outbox two-worker claim has one winner;
-stuck delivery reclaim; HTTP webhook valid/invalid; encrypted credential cannot be read as
-plaintext; restore drill. See `docs/NEXT_SESSION.md` for the remaining PR boundaries.
+## PR2-D: outbox claim, reclaim, and retry timing
+
+```bash
+RUN_INTEGRATION=1 uv run pytest -q tests/integration/test_outbox_two_workers.py
+```
+
+- The file contains three cases. The two-worker case inserts ten `pr2d.synthetic` events and
+  one non-target control row, starts two concurrent `run_once()` calls behind a barrier, and
+  uses only a local test handler. Every target row must receive exactly one handler call,
+  finish `delivered` with `attempts=1`, and the non-target row must remain unchanged.
+- The reclaim case inserts a `delivering` row, uses `sentinel_admin` to move `delivering_at`
+  into the past, calls `reclaim_stuck(age=...)` without sleeping, and then delivers the row
+  exactly once through `run_once()`. The third case checks the existing `mark_failed()` and
+  `backoff()` path: the explicit `CAST(:delay AS interval)` schedules a future retry.
+- Fixtures require PostgreSQL roles `sentinel_app` and `sentinel_admin` and fail when enabled
+  configuration or services are missing. Runtime inserts only synthetic rows; cleanup uses
+  only the admin connection and only the IDs registered by the current test. No payload, DSN,
+  password, token, or row identifier is printed.
+- `staging_gate.sh` runs this file independently as `P1-REDIS-WORKERS` with a minimum of three
+  cases. Its exact scope is: **claim/lease/reclaim semantics; two concurrent in-process workers;
+  lease ownership NOT enforced — stale-worker overwrite confirmed locally (SEC-004); test-only
+  handler; no production handler**. `P1-RESTORE` remains BLOCKED.
+- Before the fix, the group produced `tests=3 skipped=0 errors=0 failures=1`: the two-worker
+  case and mark-failed case passed, while reclaim failed with
+  `asyncpg.exceptions.UndefinedFunctionError` because `now() - :age` was untyped. The
+  sanitized red receipt is `evidence/PR2-D-RED-RECLAIM.md`; the production fix is limited to
+  `app/entrypoints/workers/outbox_runner.py`.
+- A temporary external claim copy without the status predicate made the two-worker test fail
+  by repeatedly claiming work. The copy and plugin were deleted after the negative control.
+  A separate SEC-004 experiment confirmed that a stale worker can mark a replacement lease as
+  `delivered`; ownership remains outside this gate and is not silently fixed here.
+
+The PR2-D gate proves PostgreSQL primitive semantics only. It does not prove provider delivery,
+idempotent production handlers, lease ownership, HTTP behavior, or production readiness.
+
+Required later cases: rollback on failed audit write; HTTP webhook valid/invalid; encrypted
+credential cannot be read as plaintext; restore drill. See `docs/NEXT_SESSION.md` for the
+remaining PR boundaries.

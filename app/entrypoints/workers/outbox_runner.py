@@ -25,7 +25,7 @@ async def reclaim_stuck(*, age: timedelta = timedelta(minutes=10)) -> int:
         result = await session.execute(
             text("""
           UPDATE core.outbox SET status='pending', available_at=now(), delivering_at=NULL
-           WHERE status='delivering' AND delivering_at < now() - :age
+           WHERE status='delivering' AND delivering_at < now() - CAST(:age AS interval)
         """),
             {"age": age},
         )

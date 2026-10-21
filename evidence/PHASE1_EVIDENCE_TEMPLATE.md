@@ -13,7 +13,7 @@ Offline/static PASS is informative and does not close Phase 1.
 | Gate | Command / test | Result | Evidence link | Reviewer |
 |---|---|---|---|---|
 | P1-DB | `alembic upgrade head` from empty DB | BLOCKED | | |
-| P1-REDIS | two-worker outbox + stuck reclaim | BLOCKED | | |
+| P1-REDIS-WORKERS | claim/lease/reclaim semantics; two concurrent in-process workers; lease ownership NOT enforced — stale-worker overwrite confirmed locally (SEC-004); test-only handler; no production handler | PASS (local; Linux CI/reviewer pending) | [PR2-D red reclaim receipt](PR2-D-RED-RECLAIM.md) | |
 | P1-CI | uv sync, ruff, mypy, import-linter, pytest | BLOCKED | | |
 | P1-RACE | 20 pairs + lock-wait overlap + replay/expiry; PostgreSQL; no HTTP | PASS (Linux CI; independent reviewer pending) | | |
 | P1-WEBHOOK | invalid secret 403, valid secret 200 | BLOCKED | | |
@@ -160,3 +160,42 @@ The role evidence is limited to PostgreSQL effective privileges. It does not clo
 non-superuser migration-admin gap (`SEC-002`), HTTP authorization/CSRF, encryption, provider
 delivery, independent review, or production readiness. The temporary negative controls were
 external to the repository and are not part of the commit.
+
+## PR2-C Linux CI receipt — merged
+
+PR2-C was merged into `main` at `57d7a85`. Linux CI passed on implementation commit `554335d`:
+[run #39386598021](https://github.com/AliRabiee2286/account-security-bot/actions/runs/39386598021).
+The CI receipt is runtime evidence for SEC-003; final closure remains pending independent review.
+
+| Linux CI result | Result | Counts / scope |
+|---|---|---|
+| `P1-ROLE-PRIVILEGES` | PASS | `P1-ROLE-PRIVILEGES-XML tests=2 skipped=0 errors=0 failures=0`; catalog and sensitive-table role checks passed |
+| `P1-ROLE` | PASS | Existing audit DELETE probe and role privilege group both passed |
+| Overall staging result | `PARTIAL` | `Result: PARTIAL — 4 gates BLOCKED/NOT_RUN` |
+
+Reviewer 1: project owner. Independent reviewer: pending. The next package is PR2-D; its
+scope remains claim/lease/reclaim semantics with a local test-only handler, without production
+handler activation, `app/` changes, or migration changes.
+
+## PR2-D local verification — 2026-10-20, Asia/Tehran
+
+Branch: `stg-001-pr2d-outbox`, based on merged PR2-C `57d7a85`. These are local Docker results,
+not a GitHub Actions run or independent reviewer approval. No push was performed.
+
+| Local check | Result | Counts / scope |
+|---|---|---|
+| Red evidence before fix | PASS (expected failure) | `tests=3 skipped=0 errors=0 failures=1`; two-worker and mark-failed passed; reclaim failed with `asyncpg.exceptions.UndefinedFunctionError` (`timestamp with time zone < interval`) at `outbox_runner.py:27-29` |
+| Approved product fix | PASS | `f4527e7` changes only `app/entrypoints/workers/outbox_runner.py`: `CAST(:age AS interval)`; no schema or migration change |
+| Green outbox group | PASS | `tests=3 skipped=0 errors=0 failures=0`; ten synthetic events, one local handler call each; reclaim and retry timing passed |
+| Role UPDATE negative control | PASS (expected test failure) | Temporary `GRANT UPDATE (reason)` identified `audit.audit_events`; `tests=1 skipped=0 errors=0 failures=1`; revoke and restored catalog `tests=1 ... failures=0` |
+| Claim negative control | PASS (expected test failure) | External claim copy without the status predicate made the two-worker test fail (`tests=1 skipped=0 errors=0 failures=1`); copy/plugin deleted |
+| SEC-004 experiment | CONFIRMED | `stale_worker_marked_new_lease=YES`; reclaim=1, intermediate status `delivering`, attempts=2, final status `delivered`, attempts=2; ownership remains outside gate scope |
+| Complete staging gate | PASS (local executable gates) | Exit 0; `P1-ROLE=PASS`, `P1-INTEGRATION=PASS`, `P1-RACE=PASS`, `P1-REDIS-WORKERS-XML tests=3 skipped=0 errors=0 failures=0`, `P1-REDIS-WORKERS=PASS`; `P1-RESTORE=BLOCKED` |
+| Offline checks during gate | PASS | `uv run pytest -q`: 77 passed, 11 skipped; Ruff, format, mypy, import-linter, validators, offline smoke and import smoke passed |
+| Cleanup | PASS | Every disposable container removed with `docker rm -fv`; admin cleanup was scoped to registered IDs; temporary mutation files and harnesses removed |
+
+The exact red receipt is in `evidence/PR2-D-RED-RECLAIM.md`. The outbox gate scope is
+**claim/lease/reclaim semantics; two concurrent in-process workers; lease ownership NOT enforced
+— stale-worker overwrite confirmed locally (SEC-004); test-only handler; no production handler**.
+`P1-RESTORE` remains BLOCKED, and
+Linux CI/independent review for PR2-D are still pending.

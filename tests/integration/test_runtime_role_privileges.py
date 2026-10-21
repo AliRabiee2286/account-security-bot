@@ -13,6 +13,7 @@ from sqlalchemy.engine import make_url
 CONNECT_TIMEOUT = 5
 QUERY_TIMEOUT = 5
 CLEANUP_TIMEOUT = 3
+MINIMUM_TABLE_COUNT = 20
 
 APP_SCHEMAS = ("core", "identity", "audit", "mailboxes", "social", "incidents")
 SENSITIVE_CHECKS = (
@@ -52,7 +53,7 @@ SELECT
     c.relname AS table_name,
     has_table_privilege('sentinel_app', c.oid, 'DELETE') AS can_delete,
     has_table_privilege('sentinel_app', c.oid, 'TRUNCATE') AS can_truncate,
-    has_table_privilege('sentinel_app', c.oid, 'UPDATE') AS can_update
+    has_any_column_privilege('sentinel_app', c.oid, 'UPDATE') AS can_update
 FROM pg_namespace AS n
 JOIN pg_class AS c ON c.relnamespace = n.oid
 WHERE n.nspname = ANY($1::text[])
@@ -67,6 +68,12 @@ SELECT
 FROM pg_namespace AS n
 WHERE n.nspname = ANY($1::text[])
 ORDER BY n.nspname
+"""
+
+DATABASE_PRIVILEGE_QUERY = """
+SELECT
+    has_database_privilege('sentinel_app', current_database(), 'CREATE') AS can_create_database,
+    has_schema_privilege('sentinel_app', 'public', 'CREATE') AS can_create_public_schema
 """
 
 ROLE_QUERY = """
@@ -241,6 +248,7 @@ async def test_admin_catalog_confirms_runtime_role_privileges(
     rows: list[asyncpg.Record] | None = None
     schema_rows: list[asyncpg.Record] | None = None
     role: asyncpg.Record | None = None
+    database_privileges: asyncpg.Record | None = None
     admin_identity: asyncpg.Record | None = None
     runtime_identity: asyncpg.Record | None = None
     query_failed = False
@@ -249,6 +257,7 @@ async def test_admin_catalog_confirms_runtime_role_privileges(
             rows = await admin_connection.fetch(CATALOG_QUERY, list(APP_SCHEMAS))
             schema_rows = await admin_connection.fetch(SCHEMA_PRIVILEGE_QUERY, list(APP_SCHEMAS))
             role = await admin_connection.fetchrow(ROLE_QUERY)
+            database_privileges = await admin_connection.fetchrow(DATABASE_PRIVILEGE_QUERY)
             admin_identity = await admin_connection.fetchrow(DATABASE_IDENTITY_QUERY)
             runtime_identity = await runtime_connection.fetchrow(DATABASE_IDENTITY_QUERY)
     except Exception:
@@ -259,6 +268,7 @@ async def test_admin_catalog_confirms_runtime_role_privileges(
         or rows is None
         or schema_rows is None
         or role is None
+        or database_privileges is None
         or admin_identity is None
         or runtime_identity is None
     ):
@@ -266,8 +276,7 @@ async def test_admin_catalog_confirms_runtime_role_privileges(
 
     returned_tables = {(row["schema_name"], row["table_name"]) for row in rows}
     expected_tables = set(SENSITIVE_TABLES) | {("audit", "audit_events")}
-    minimum_table_count = len(APP_SCHEMAS)
-    if len(rows) < minimum_table_count or not expected_tables.issubset(returned_tables):
+    if len(rows) < MINIMUM_TABLE_COUNT or not expected_tables.issubset(returned_tables):
         pytest.fail("Admin PostgreSQL privilege catalog is incomplete", pytrace=False)
 
     returned_schemas = {row["schema_name"] for row in schema_rows}
@@ -281,6 +290,8 @@ async def test_admin_catalog_confirms_runtime_role_privileges(
     }
     role_attribute_violations = sum(bool(role[attribute]) for attribute in ROLE_ATTRIBUTES)
     role_membership_violation = not role["is_member"]
+    database_create_violation = bool(database_privileges["can_create_database"])
+    public_schema_create_violation = bool(database_privileges["can_create_public_schema"])
     database_identity_violation = (
         admin_identity["database_name"] != runtime_identity["database_name"]
         or admin_identity["current_user"] != "sentinel_admin"
@@ -297,6 +308,8 @@ async def test_admin_catalog_confirms_runtime_role_privileges(
         f"schema_create_violation_count={len(schema_create_violations)}, "
         f"role_attribute_violation_count={role_attribute_violations}, "
         f"role_membership_violation={int(role_membership_violation)}, "
+        f"database_create_violation={int(database_create_violation)}, "
+        f"public_schema_create_violation={int(public_schema_create_violation)}, "
         f"database_identity_violation={int(database_identity_violation)}"
     )
     if table_violations:
@@ -306,18 +319,24 @@ async def test_admin_catalog_confirms_runtime_role_privileges(
             "admin schema CREATE violation schemas: " + ", ".join(sorted(schema_create_violations))
         )
 
-    if table_violations:
-        pytest.fail("Runtime role has forbidden table privileges", pytrace=False)
-    if returned_schemas != set(APP_SCHEMAS):
-        pytest.fail("Admin PostgreSQL privilege catalog is missing app schemas", pytrace=False)
-    if schema_create_violations:
-        pytest.fail("Runtime role has forbidden schema privileges", pytrace=False)
-    if role_attribute_violations:
-        pytest.fail("Runtime role has forbidden role attributes", pytrace=False)
-    if role_membership_violation:
-        pytest.fail("Runtime role is not a member of sentinel_app_role", pytrace=False)
-    if database_identity_violation:
-        pytest.fail(
+    for message, violation in (
+        ("Runtime role has forbidden table privileges", bool(table_violations)),
+        (
+            "Admin PostgreSQL privilege catalog is missing app schemas",
+            returned_schemas != set(APP_SCHEMAS),
+        ),
+        ("Runtime role has forbidden schema privileges", bool(schema_create_violations)),
+        ("Runtime role has forbidden role attributes", bool(role_attribute_violations)),
+        ("Runtime role is not a member of sentinel_app_role", role_membership_violation),
+        ("Runtime role has forbidden database CREATE privilege", database_create_violation),
+        (
+            "Runtime role has forbidden public schema CREATE privilege",
+            public_schema_create_violation,
+        ),
+        (
             "Runtime and admin connections target different roles or databases",
-            pytrace=False,
-        )
+            database_identity_violation,
+        ),
+    ):
+        if violation:
+            pytest.fail(message, pytrace=False)
