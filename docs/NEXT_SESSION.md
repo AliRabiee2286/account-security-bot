@@ -1,11 +1,13 @@
-# دستور جلسه بعد — PR2-E، restore پس از receipt و review برای PR2-D
+# دستور جلسه بعد — PR2-E، restore پس از ادغام و receipt PR2-D
 
-**اولین کار جلسه بعد:** commitهای PR2-D روی شاخهٔ `stg-001-pr2d-outbox` را بازبینی کنید،
-receipt Linux CI و review مستقل را بگیرید، سپس PR2-E restore را شروع کنید؛ push/PR با صاحب
-پروژه است.
-PR2-C در `main` با `57d7a85` ادغام شد و [Linux CI آن](https://github.com/AliRabiee2286/account-security-bot/actions/runs/39386598021)
-روی commit `554335d` سبز شد. Reviewer 1 صاحب پروژه است؛ reviewer مستقل PR2-C برای بسته‌شدن
-نهایی SEC-003 همچنان pending است.
+**اولین کار جلسه بعد:** PR2-E restore را روی شاخهٔ `stg-001-pr2e-restore` اجرا و verify کنید؛
+push/PR با صاحب پروژه است.
+PR2-D در `main` با `9466b0a` ادغام شده و [Linux CI آن](https://github.com/AliRabiee2286/account-security-bot/actions/runs/39551172150)
+با `P1-REDIS-WORKERS-XML tests=3 skipped=0 errors=0 failures=0` و
+`Result: PARTIAL — 3 gates BLOCKED/NOT_RUN` ثبت شده است. Reviewer مستقل PR2-D همچنان pending
+است.
+PR2-C در `main` با `57d7a85` ادغام شد و receipt آن حفظ شده است. Reviewer 1 صاحب پروژه است؛
+reviewer مستقل PR2-C برای بسته‌شدن نهایی SEC-003 همچنان pending است.
 
 این سند برنامهٔ جاری PR2 است. تاریخچهٔ STEP-000 و برنامهٔ اجرایی PR1 در
 `docs/archive/STG-001-PR1-plan.md` نگهداری می‌شود. در اجرای PR2، کد، migration و
@@ -153,6 +155,10 @@ pytest exit=0 و JUnit معتبر با skipped/errors/failures=0 نیاز دار
 - بعد از fix گروه کامل و gate green شدند. Red receipt در `evidence/PR2-D-RED-RECLAIM.md` است.
   کنترل منفی خارجی با حذف شرط status از SQL claim، تست دو-worker را با claim تکراری/timeout
   شکست داد و سپس copy/plugin حذف شدند.
+- PR2-D در `main` با `9466b0a` ادغام شد. Linux CI run `39551172150` با
+  `P1-REDIS-WORKERS-XML tests=3 skipped=0 errors=0 failures=0` و
+  `Result: PARTIAL — 3 gates BLOCKED/NOT_RUN` این بسته را از نظر CI ثبت کرد؛ این receipt جای
+  review مستقل یا رفع SEC-004 را نمی‌گیرد.
 - SEC-004 experiment: **YES**. سناریو: worker قدیمی handler را pause کرد، row reclaim شد،
   worker جدید همان row را گرفت، سپس release worker قدیمی باعث شد `mark_delivered` آن row را
   پیش از پایان worker جدید `delivered` کند. این خارج از Scope gate است و SEC-004 مانع باز هر
@@ -249,6 +255,6 @@ admin غیر-superuser بعد از `PR2-E` و پس از تصمیم طراحی ج
 ## قدم بعدی رسمی
 
 **`PR2-E — restore با pg_dump/pg_restore`**؛
-PR2-D در local disposable green شده، اما Linux CI و review مستقل آن هنوز pending هستند. پس از
-receipt/review، PR2-E شروع می‌شود. SEC-004 تا طراحی ownership برای هر provider واقعی مانع باز
-می‌ماند و `P1-RESTORE` هنوز BLOCKED است.
+PR2-D در `main` ادغام و receipt لینوکس آن ثبت شده است. PR2-E اکنون بستهٔ رسمی بعدی است؛
+SEC-004 تا طراحی ownership برای هر provider واقعی مانع باز می‌ماند و `P1-RESTORE` هنوز
+BLOCKED است.

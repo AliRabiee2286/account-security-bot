@@ -1,7 +1,7 @@
 # وضعیت canonical پروژه
 
-**آخرین بازبینی:** ۲۰ اکتبر ۲۰۲۶، منطقه زمانی تهران؛ baseline در ۱۴ اکتبر پذیرفته شد
-**دامنه این به‌روزرسانی:** ثبت PR2-D، اصلاح محدود reclaim و local outbox evidence؛ بدون تغییر schema یا migration
+**آخرین بازبینی:** ۲۲ اکتبر ۲۰۲۶، منطقه زمانی تهران؛ baseline در ۱۴ اکتبر پذیرفته شد
+**دامنه این به‌روزرسانی:** ثبت ادغام PR2-D و receipt لینوکس؛ بدون تغییر schema یا migration
 
 این فایل تنها مرجع وضعیت جاری و تنها محل ثبت «قدم بعدی» رسمی است. وضعیت‌ها و قدم‌های
 قبلی در `task_plan.md`، `findings.md`، `progress.md` و Second Brain به‌عنوان تاریخچه
@@ -30,7 +30,7 @@
 | CI workflow syntax | `VERIFIED` | run #5 با commit `a20c620` در GitHub Actions کامل اجرا شد؛ workflow در PR2-B تغییر نکرد. |
 | migration chain روی DB خالی | `VERIFIED` | `alembic upgrade head` روی PostgreSQL 16 disposable موفق شد و `current=heads=0007` ثبت شد؛ محدودیت: نقش admin در CI، superuser بود و اثبات با admin غیر-superuser انجام نشده است. |
 | runtime role privilege probe | `VERIFIED_IN_CI` | PR2-C در `main` با `57d7a85` ادغام شد؛ Linux CI روی `554335d`، run `39386598021`: چهار DELETE با `42501` رد شدند و catalog شامل ۲۱ جدول در ۶ schema با صفر violation بود؛ بسته‌شدن نهایی SEC-003 به review مستقل وابسته است. |
-| PostgreSQL/Redis و CI runtime | `PARTIAL` | PR2-A، PR2-B و PR2-C در `main` ادغام شده‌اند (`3700466`, `59a9da2`, `57d7a85`). Linux CI برای PR2-C روی `554335d` سبز شد؛ reviewer مستقل PR2-C هنوز pending است. |
+| PostgreSQL/Redis و CI runtime | `PARTIAL` | PR2-A تا PR2-D در `main` ادغام شده‌اند؛ PR2-D با `9466b0a` و Linux CI run `39551172150`، گروه outbox را با صفر skip/error/failure سبز کرد؛ reviewer مستقل همچنان pending است. |
 | Telegram Mini App proof | `IMPLEMENTED_NOT_VERIFIED` | validator و route ثبت‌نام وجود دارد؛ deploy و smoke واقعی نداریم. |
 | registration/approval | `PARTIAL` | ثبت pending و اسکلت approval وجود دارد؛ زنجیره کامل session و MFA اثبات نشده است. |
 | session/auth resolver | `PARTIAL` | resolver و hash DB-backed وجود دارند؛ همه routeهای حساس هنوز به جریان نهایی وصل نیستند. |
@@ -46,10 +46,10 @@
 
 ## وضعیت فازها
 
-- **Phase 1: `PARTIAL`** — PR2-A، PR2-B و PR2-C ادغام شده‌اند. PR2-C در `main` با
-  `57d7a85` موجود است و Linux CI روی `554335d`، run `39386598021`، PASS شد:
-  `P1-ROLE-PRIVILEGES-XML tests=2 skipped=0 errors=0 failures=0`، `P1-ROLE=PASS` و
-  `Result: PARTIAL — 4 gates BLOCKED/NOT_RUN`.
+- **Phase 1: `PARTIAL`** — PR2-A تا PR2-D ادغام شده‌اند. PR2-D در `main` با `9466b0a` موجود
+  است و [Linux CI run `39551172150`](https://github.com/AliRabiee2286/account-security-bot/actions/runs/39551172150)
+  این receipt را ثبت کرد: `P1-REDIS-WORKERS-XML tests=3 skipped=0 errors=0 failures=0` و
+  `Result: PARTIAL — 3 gates BLOCKED/NOT_RUN`.
 - SEC-003 در Linux CI تأیید شد: catalog sweep همهٔ ۶ schema و ۲۱ جدول را پوشش داد، membership
   در `sentinel_app_role` و محدودیت attributeها را بررسی کرد و هیچ violationی نداشت. بسته‌شدن
   نهایی SEC-003 به review مستقل وابسته است؛ این receipt جای review را نمی‌گیرد.
@@ -87,13 +87,13 @@
 
 **`PR2-E — restore با pg_dump/pg_restore؛ پس از receipt/review PR2-D`**
 
-PR2-C در `main` با `57d7a85` ادغام شده و [Linux CI آن](https://github.com/AliRabiee2286/account-security-bot/actions/runs/39386598021)
-روی `554335d` سبز است: `P1-ROLE-PRIVILEGES-XML tests=2 skipped=0 errors=0 failures=0`،
-`P1-ROLE=PASS` و `Result: PARTIAL — 4 gates BLOCKED/NOT_RUN`. PR2-D روی شاخهٔ
-`stg-001-pr2d-outbox` به‌صورت محلی green شد؛ Linux CI و review مستقل آن هنوز pending هستند.
-SEC-003 نیز همچنان منتظر review مستقل است. مسیر reclaim روی PostgreSQL واقعی هیچ‌وقت کار نمی‌کرد
-و در PR2-D کشف و اصلاح شد؛ `app/` فقط در commit `f4527e7` تغییر کرد، migration/schema تغییر
-نکردند، و SEC-004 برای provider واقعی باز مانده است.
+PR2-D در `main` با `9466b0a` ادغام شده و [Linux CI آن](https://github.com/AliRabiee2286/account-security-bot/actions/runs/39551172150)
+این receipt را ثبت کرده است: `P1-REDIS-WORKERS-XML tests=3 skipped=0 errors=0 failures=0` و
+`Result: PARTIAL — 3 gates BLOCKED/NOT_RUN`. Reviewer مستقل PR2-D و SEC-003 همچنان pending
+هستند؛ مسیر reclaim در PR2-D اصلاح شد، migration/schema تغییر نکردند، و SEC-004 برای provider
+واقعی باز مانده است. مسیر reclaim روی PostgreSQL واقعی هیچ‌وقت کار نمی‌کرد و در PR2-D کشف و
+اصلاح شد؛ `app/` فقط در commit `f4527e7` تغییر کرد، migration/schema تغییر نکردند، و SEC-004
+برای provider واقعی باز مانده است.
 
 ## ممنوعیت‌های این baseline
 

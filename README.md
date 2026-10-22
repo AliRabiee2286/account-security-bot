@@ -55,11 +55,13 @@ tests/               # unit and integration tests
 The offline foundation gate is green: the project has a checked-in `uv.lock`, strict typing,
 Ruff, import boundaries, unit tests, import smoke, migration/static validators, and offline
 security smoke. This does **not** make the project production-ready. Phase 1 is **PARTIAL**
-(see `docs/STATUS.md`). PR2-A is merged into `main` at `3700466`, PR2-B at `59a9da2`, and
-PR2-C at `57d7a85`. Linux CI passed for PR2-C on commit `554335d`; the independent reviewer
-is still pending. Real Telegram delivery, restore, and two-person security review remain open;
-local PASS does not close the release gate. PR2-D has a local PostgreSQL/Redis PASS, but its
-Linux CI receipt and independent review are still pending.
+(see `docs/STATUS.md`). PR2-A is merged into `main` at `3700466`, PR2-B at `59a9da2`,
+PR2-C at `57d7a85`, and PR2-D at `9466b0a`. Linux CI passed for PR2-D in the
+[PR2-D run](https://github.com/AliRabiee2286/account-security-bot/actions/runs/39551172150)
+with `P1-REDIS-WORKERS-XML tests=3 skipped=0 errors=0 failures=0` and
+`Result: PARTIAL — 3 gates BLOCKED/NOT_RUN`. The independent reviewer is still pending. Real
+Telegram delivery, restore, and two-person security review remain open; local or CI PASS for one
+gate does not close the release gate.
 
 Run the complete environment gate only from `docs/STAGING_RUNBOOK.md`. Runtime uses
 `DATABASE_URL` with the least-privileged `sentinel_app` role; Alembic uses the separate
@@ -127,13 +129,13 @@ stage; PR2-D adds the separate outbox-worker gate described below.
 
 ### Outbox worker/reclaim gate (PR2-D)
 
-PR2-D is implemented locally on `stg-001-pr2d-outbox` in three focused commits:
+PR2-D is merged into `main` at `9466b0a`:
 
 - `f4527e7` — `fix(outbox): cast interval parameter in reclaim_stuck` — the only product-code
   change; `CAST(:age AS interval)` fixes the real PostgreSQL reclaim failure.
 - `f3f41ce` — two-worker, reclaim, and retry-timing integration tests plus the independent
   `P1-REDIS-WORKERS` gate.
-- The documentation/evidence commit follows after final verification; nothing is pushed here.
+- Linux CI recorded the independent outbox receipt; no push was performed from this workspace.
 
 The local disposable gate recorded:
 
