@@ -137,29 +137,34 @@ PR2-D is merged into `main` at `9466b0a`:
 - `f3f41ce` — two-worker, reclaim, and retry-timing integration tests plus the independent
   `P1-REDIS-WORKERS` gate.
 - Linux CI recorded the independent outbox receipt; no push was performed from this workspace.
+- This branch adds `f8c8d1d` for SEC-004 attempts fencing; Linux CI for the fix is pending.
 
 The local disposable gate recorded:
 
 ```text
-P1-REDIS-WORKERS-XML tests=3 skipped=0 errors=0 failures=0
-P1-REDIS-WORKERS=PASS scope=claim/lease/reclaim semantics; two concurrent in-process workers; lease ownership NOT enforced — stale-worker overwrite confirmed locally (SEC-004); test-only handler; no production handler
+P1-REDIS-WORKERS-XML tests=5 skipped=0 errors=0 failures=0
+P1-REDIS-WORKERS=PASS scope=claim/lease/reclaim semantics; two concurrent in-process workers; lease ownership enforced by attempts fencing (SEC-004: stale worker cannot mark delivered or failed); test-only handler; no production handler; DB state only; handlers must be idempotent
 ```
 
 The first test used two concurrent `run_once()` workers, ten synthetic events, a local
 test-only handler, and an untouched non-target row. The reclaim test seeded an old
-`delivering` row with admin, reclaimed it without sleep, and delivered it once. The third test
-covers the existing typed `mark_failed`/backoff interval path. Cleanup uses only
-`sentinel_admin` and registered IDs.
+`delivering` row with admin, reclaimed it without sleep, and delivered it once. The fourth and
+fifth tests coordinate stale delivered/failed workers with events, reclaim the row, and assert
+that only the worker holding the claimed `attempts` value can change database state. The existing
+typed `mark_failed`/backoff interval path remains covered. Cleanup uses only `sentinel_admin` and
+registered IDs.
 
 Before the fix, the complete group was red: `tests=3`, `failures=1`, while the two-worker test
 and mark-failed test passed. The sanitized receipt is in
 `evidence/PR2-D-RED-RECLAIM.md`. A temporary claim mutation without the status predicate made
 the two-worker test fail by repeatedly claiming work; the mutation was external and deleted.
 
-The SEC-004 experiment confirmed **YES**: after reclaim, an old paused worker can still execute
-`mark_delivered` while a new worker holds the replacement lease, changing the row to
-`delivered` before the new worker finishes. Lease ownership is explicitly outside this gate and
-remains a release blocker for real providers.
+The SEC-004 red experiment confirmed **YES** before the fix: after reclaim, an old paused worker
+could overwrite the replacement lease. The local fix now fences both `mark_delivered` and
+`mark_failed` with the claimed `attempts` value; the new tests are green locally and the unfenced
+external-copy control is red again. Fencing protects database state only: an external effect
+already performed by an old worker is not undone, so real provider handlers must be idempotent with
+a key derived from the message identifier. Linux CI for SEC-004 is pending.
 
 The initial read-only timed-SQL inventory found the failing untyped `now() - :age` in
 `app/entrypoints/workers/outbox_runner.py:27-28` and the already explicit

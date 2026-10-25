@@ -116,22 +116,26 @@ RUN_INTEGRATION=1 uv run pytest -q tests/integration/test_runtime_role_privilege
 RUN_INTEGRATION=1 uv run pytest -q tests/integration/test_outbox_two_workers.py
 ```
 
-- The file contains three cases. The two-worker case inserts ten `pr2d.synthetic` events and
+- The file contains five cases. The two-worker case inserts ten `pr2d.synthetic` events and
   one non-target control row, starts two concurrent `run_once()` calls behind a barrier, and
   uses only a local test handler. Every target row must receive exactly one handler call,
   finish `delivered` with `attempts=1`, and the non-target row must remain unchanged.
 - The reclaim case inserts a `delivering` row, uses `sentinel_admin` to move `delivering_at`
   into the past, calls `reclaim_stuck(age=...)` without sleeping, and then delivers the row
   exactly once through `run_once()`. The third case checks the existing `mark_failed()` and
-  `backoff()` path: the explicit `CAST(:delay AS interval)` schedules a future retry.
+  `backoff()` path: the explicit `CAST(:delay AS interval)` schedules a future retry. The fourth
+  and fifth cases pause worker A in a local test-only handler, reclaim the row, let worker B claim
+  `attempts=2`, and verify that stale delivered and failed completions from A do not change
+  database state; B then completes the row.
 - Fixtures require PostgreSQL roles `sentinel_app` and `sentinel_admin` and fail when enabled
   configuration or services are missing. Runtime inserts only synthetic rows; cleanup uses
   only the admin connection and only the IDs registered by the current test. No payload, DSN,
   password, token, or row identifier is printed.
-- `staging_gate.sh` runs this file independently as `P1-REDIS-WORKERS` with a minimum of three
+- `staging_gate.sh` runs this file independently as `P1-REDIS-WORKERS` with a minimum of five
   cases. Its exact scope is: **claim/lease/reclaim semantics; two concurrent in-process workers;
-  lease ownership NOT enforced — stale-worker overwrite confirmed locally (SEC-004); test-only
-  handler; no production handler**. In the PR2-D receipt, `P1-RESTORE` was still BLOCKED.
+  lease ownership enforced by attempts fencing (SEC-004: stale worker cannot mark delivered or
+  failed); test-only handler; no production handler; DB state only; handlers must be idempotent**.
+  In the PR2-D receipt, `P1-RESTORE` was still BLOCKED.
 - Before the fix, the group produced `tests=3 skipped=0 errors=0 failures=1`: the two-worker
   case and mark-failed case passed, while reclaim failed with
   `asyncpg.exceptions.UndefinedFunctionError` because `now() - :age` was untyped. The
@@ -139,11 +143,15 @@ RUN_INTEGRATION=1 uv run pytest -q tests/integration/test_outbox_two_workers.py
   `app/entrypoints/workers/outbox_runner.py`.
 - A temporary external claim copy without the status predicate made the two-worker test fail
   by repeatedly claiming work. The copy and plugin were deleted after the negative control.
-  A separate SEC-004 experiment confirmed that a stale worker can mark a replacement lease as
-  `delivered`; ownership remains outside this gate and is not silently fixed here.
+  The SEC-004 red receipt is `evidence/PR-SEC004-RED.md`. Before the fix, a stale worker changed
+  replacement lease state; after the fix the two new cases and the full five-case group are green
+  locally. An external temporary copy of the unfenced dispatch module makes both new cases red
+  again and is deleted after the control.
 
-The PR2-D gate proves PostgreSQL primitive semantics only. It does not prove provider delivery,
-idempotent production handlers, lease ownership, HTTP behavior, or production readiness.
+The PR2-D/SEC-004 gate proves PostgreSQL primitive semantics and database-state fencing only. It
+does not prove provider delivery, HTTP behavior, or production readiness. Fencing does not undo an
+external effect already performed by a stale worker; real provider handlers must be idempotent with
+a key derived from the message identifier. Linux CI for SEC-004 is pending.
 
 ## PR2-E: logical PostgreSQL restore round trip
 

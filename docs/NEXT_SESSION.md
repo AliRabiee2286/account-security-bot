@@ -1,16 +1,18 @@
-# دستور جلسه بعد — review مستقل PR2-E پس از receipt لینوکس آن
+# دستور جلسه بعد — PR2-F پس از receipt لینوکس PR2-E
 
 **وضعیت فعلی:** PR2-E در `main` با `1262177` ادغام شده و Linux CI آن در
 [run `40222607578`](https://github.com/AliRabiee2286/account-security-bot/actions/runs/40222607578)
 با `P1-RESTORE-XML tests=2 skipped=0 errors=0 failures=0`، `P1-RESTORE=PASS` و
-`Result: PARTIAL — 2 gates BLOCKED/NOT_RUN` ثبت شده است. **اولین کار جلسه بعد:** review مستقل
-PR2-E را ثبت کنید؛ push/PR با صاحب پروژه است.
+`Result: PARTIAL — 2 gates BLOCKED/NOT_RUN` ثبت شده است. Review مستقل PR2-E همچنان pending
+است؛ **قدم بعدی رسمی: PR2-F** برای مقایسهٔ ACLهای restore و اثبات migration/admin با مرزهای
+مستقل آن بسته. push/PR با صاحب پروژه است.
 PR2-D در `main` با `9466b0a` ادغام شده و [Linux CI آن](https://github.com/AliRabiee2286/account-security-bot/actions/runs/39551172150)
 با `P1-REDIS-WORKERS-XML tests=3 skipped=0 errors=0 failures=0` و
 `Result: PARTIAL — 3 gates BLOCKED/NOT_RUN` ثبت شده است. Reviewer مستقل PR2-D همچنان pending
 است.
 PR2-C در `main` با `57d7a85` ادغام شد و receipt آن حفظ شده است. Reviewer 1 صاحب پروژه است؛
-reviewer مستقل PR2-C برای بسته‌شدن نهایی SEC-003 همچنان pending است.
+reviewer مستقل PR2-C برای بسته‌شدن نهایی SEC-003 همچنان pending است. SEC-004 در branch
+  `stg-001-sec004-fencing` اصلاح‌شده و شاهد محلی دارد؛ Linux CI برای آن pending است.
 
 این سند برنامهٔ جاری PR2 است. تاریخچهٔ STEP-000 و برنامهٔ اجرایی PR1 در
 `docs/archive/STG-001-PR1-plan.md` نگهداری می‌شود. در اجرای PR2، کد، migration و
@@ -137,16 +139,14 @@ pytest exit=0 و JUnit معتبر با skipped/errors/failures=0 نیاز دار
 
 - اثبات: دو `run_once()` برای یک event synthetic فقط یک claim و یک invocation بدهند؛
   row به `delivered` برسد و delivery قدیمی از `delivering` به `pending` reclaim شود.
-- Scope: `claim/lease/reclaim semantics; two concurrent in-process workers; lease ownership NOT
-  enforced — stale-worker overwrite confirmed locally (SEC-004); test-only handler; no production
-  handler`.
+- Scope of the historical PR2-D receipt: `claim/lease/reclaim semantics; two concurrent
+  in-process workers; lease ownership NOT enforced — stale-worker overwrite confirmed locally
+  (SEC-004); test-only handler; no production handler`.
   handler محلیِ فقط‌برای‌تست مجاز است؛ `HANDLERS` تولیدی خالی است و PASS فقط همین
   semantics را ثابت می‌کند، نه handler تولیدی.
 - CI/gate: اجرای مستقل pytest با `P1-REDIS-WORKERS-XML tests=3 skipped=0 errors=0 failures=0`
-  و `P1-REDIS-WORKERS=PASS`. Scope دقیق: **claim/lease/reclaim semantics; two concurrent in-process
-  workers; lease ownership NOT enforced — stale-worker overwrite confirmed locally (SEC-004);
-  test-only handler; no production handler**. `P1-RESTORE` همچنان
-  BLOCKED است.
+  و `P1-REDIS-WORKERS=PASS` در PR2-D. این scope تاریخی است و پیش از اصلاح SEC-004 ثبت شده؛
+  `P1-RESTORE` همچنان BLOCKED بود.
 - تست‌ها: دو worker هم‌زمان با barrier و ده event synthetic، reclaim بدون sleep با timestamp
   قدیمی که admin ثبت کرد، و یک تست جدا برای `mark_failed`/`backoff` چون مسیر آن از قبل
   `CAST(:delay AS interval)` داشت. cleanup فقط admin و فقط شناسه‌های ثبت‌شدهٔ همان تست بود.
@@ -162,10 +162,10 @@ pytest exit=0 و JUnit معتبر با skipped/errors/failures=0 نیاز دار
   `P1-REDIS-WORKERS-XML tests=3 skipped=0 errors=0 failures=0` و
   `Result: PARTIAL — 3 gates BLOCKED/NOT_RUN` این بسته را از نظر CI ثبت کرد؛ این receipt جای
   review مستقل یا رفع SEC-004 را نمی‌گیرد.
-- SEC-004 experiment: **YES**. سناریو: worker قدیمی handler را pause کرد، row reclaim شد،
+- SEC-004 experiment پیش از اصلاح: **YES**. سناریو: worker قدیمی handler را pause کرد، row reclaim شد،
   worker جدید همان row را گرفت، سپس release worker قدیمی باعث شد `mark_delivered` آن row را
-  پیش از پایان worker جدید `delivered` کند. این خارج از Scope gate است و SEC-004 مانع باز هر
-  provider واقعی می‌ماند؛ اصلاح ownership در این PR انجام نشد.
+  پیش از پایان worker جدید `delivered` کند. اصلاح در branch فعلی با attempts fencing انجام شد؛
+  شاهد محلی و کنترل منفی در `evidence/PR-SEC004-RED.md` ثبت شده‌اند و Linux CI pending است.
 
 #### فهرست اولیهٔ read-only برای TEST-002
 
@@ -260,19 +260,19 @@ run مجاز به حذف‌اند؛ volumeهای قدیمی workspace را پا�
 
 ## ترتیب و شرط موفقیت
 
-ترتیب پیشنهادی: `PR2-A`، `PR2-B`، `PR2-C`، `PR2-D`، `PR2-E`، `PR2-F`. `PR2-F` برای اثبات
-admin غیر-superuser بعد از `PR2-E` و پس از تصمیم طراحی جدا شروع می‌شود. هر بسته مستقل review
+ترتیب پیشنهادی: `PR2-A`، `PR2-B`، `PR2-C`، `PR2-D`، `PR2-E`، `PR2-F`. `PR2-F` برای مقایسهٔ
+`relacl`/`nspacl` در restore و اثبات admin غیر-superuser بعد از `PR2-E` و پس از تصمیم طراحی جدا
+شروع می‌شود. هر بسته مستقل review
 می‌شود و merge آن فقط همان gate را به‌روزرسانی می‌کند. Phase 1 فقط وقتی از `PARTIAL`
 خارج می‌شود که هر پنج گروه، بدون skip، در CI لینوکسی GitHub اجرا شوند، exit code صفر
 داشته باشند، evidence sanitized و reviewer مستقل داشته باشند؛ PASS محلی تمرین است و
-شاهد نهایی محسوب نمی‌شود. `SEC-004` به‌عنوان محدودیت شناخته‌شده، برای هر provider واقعی
-یک مانع باز باقی می‌ماند و تا طراحی/رفع مالکیت lease، خروج Phase 1 برای provider واقعی
-کامل محسوب نمی‌شود.
+شاهد نهایی محسوب نمی‌شود. SEC-004 در این branch اصلاح‌شده و شاهد محلی دارد، اما Linux CI
+آن pending است؛ fencing فقط DB state را محافظت می‌کند و provider واقعی به handler idempotent
+با کلید مشتق از شناسهٔ پیام نیاز دارد.
 
 ## قدم بعدی رسمی
 
-**`ثبت Linux CI receipt و review مستقل برای PR2-E — restore با pg_dump/pg_restore`**؛
-PR2-D در `main` ادغام و receipt لینوکس آن ثبت شده است. PR2-E اکنون بستهٔ رسمی بعدی است؛
-پیاده‌سازی محلی آن در `e3e03d7` سبز شده، اما تا receipt Linux CI و review مستقل،
-`P1-RESTORE` در evidence نهایی verified-in-CI محسوب نمی‌شود. SEC-004 تا طراحی ownership
-برای هر provider واقعی مانع باز می‌ماند.
+**`PR2-F — مقایسهٔ relacl/nspacl و اثبات migration/admin غیر-superuser`**؛ PR2-E در `main`
+ادغام شده و receipt Linux CI آن ثبت شده است. Review مستقل PR2-E هنوز pending است، اما قدم
+بعدی رسمی PR2-F است. برای SEC-004، Linux CI جداگانه هنوز pending است و هیچ provider واقعی
+فعال نشده است.

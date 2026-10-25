@@ -221,10 +221,24 @@ integration، `RUN_INTEGRATION=1`، race/reclaim، restore و cleanup اضافه
 
 - برای gate `P1-REDIS-WORKERS`، اجرای `run_once()` با handler فقط‌برای‌تست کافی است؛
   این تست semantics مربوط به **claim/lease/reclaim** را اثبات می‌کند.
-- Scope این تصمیم: `claim/lease/reclaim semantics; two concurrent in-process workers;
-  lease ownership NOT enforced — stale-worker overwrite confirmed locally (SEC-004);
-  test-only handler; no production handler`. خالی بودن `HANDLERS` در worker تولیدی باقی می‌ماند و این gate نباید delivery
-  به provider یا رفتار handler تولیدی را PASS اعلام کند.
+- Scope receipt تاریخی PR2-D (پیش از رفع SEC-004): `claim/lease/reclaim semantics; two concurrent
+  in-process workers; lease ownership NOT enforced — stale-worker overwrite confirmed locally
+  (SEC-004); test-only handler; no production handler`. خالی بودن `HANDLERS` در worker تولیدی باقی
+  می‌ماند و این gate نباید delivery به provider یا رفتار handler تولیدی را PASS اعلام کند.
+
+### SEC-004 — fencing مالکیت lease با attempts
+
+- `claim_one()` مقدار `attempts` بعد از claim را در `ClaimedMessage` نگه می‌دارد. هر دو مسیر
+  `mark_delivered()` و `mark_failed()` باید در `WHERE` هم‌زمان `status='delivering'` و
+  `attempts=:attempts` را بررسی کنند و با rowcount نشان دهند که ردیفی تغییر کرده است یا نه.
+- اگر fence رد شود، `run_once()` آن را خطای worker حساب نمی‌کند و فقط یک log sanitized بدون payload
+  می‌نویسد؛ worker قدیمی نباید state مربوط به lease جدید را تغییر دهد. این تصمیم بدون تغییر schema
+  یا migration اجرا شده است.
+- این fencing فقط state دیتابیس را محافظت می‌کند؛ اثر خارجی‌ای که worker قدیمی قبلاً انجام داده
+  برنمی‌گردد. بنابراین handlerهای provider واقعی باید idempotent باشند و کلید idempotency را از
+  شناسهٔ پیام مشتق کنند.
+- شاهد این تصمیم فعلاً محلی است: تست‌های stale delivered/stale failed و گروه پنج‌تایی outbox سبز
+  شده‌اند و کنترل منفی با کپی بدون fence قرمز شده است؛ Linux CI برای SEC-004 pending است.
 
 ### P1-RESTORE — محدودهٔ restore در CI
 

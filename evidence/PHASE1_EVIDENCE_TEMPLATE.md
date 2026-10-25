@@ -13,7 +13,7 @@ Offline/static PASS is informative and does not close Phase 1.
 | Gate | Command / test | Result | Evidence link | Reviewer |
 |---|---|---|---|---|
 | P1-DB | `alembic upgrade head` from empty DB | BLOCKED | | |
-| P1-REDIS-WORKERS | claim/lease/reclaim semantics; two concurrent in-process workers; lease ownership NOT enforced — stale-worker overwrite confirmed locally (SEC-004); test-only handler; no production handler | PASS (local + Linux CI; independent reviewer pending) | [PR2-D red reclaim receipt](PR2-D-RED-RECLAIM.md); [PR2-D Linux CI run](https://github.com/AliRabiee2286/account-security-bot/actions/runs/39551172150) | |
+| P1-REDIS-WORKERS | claim/lease/reclaim semantics; two concurrent in-process workers; lease ownership enforced by attempts fencing (SEC-004: stale worker cannot mark delivered or failed); test-only handler; no production handler; DB state only; handlers must be idempotent | PASS (local; Linux CI pending) | [SEC-004 red/green receipt](PR-SEC004-RED.md); [PR2-D Linux CI run](https://github.com/AliRabiee2286/account-security-bot/actions/runs/39551172150) | |
 | P1-CI | uv sync, ruff, mypy, import-linter, pytest | BLOCKED | | |
 | P1-RACE | 20 pairs + lock-wait overlap + replay/expiry; PostgreSQL; no HTTP | PASS (Linux CI; independent reviewer pending) | | |
 | P1-WEBHOOK | invalid secret 403, valid secret 200 | BLOCKED | | |
@@ -199,8 +199,27 @@ not a GitHub Actions run or independent reviewer approval. No push was performed
 The exact red receipt is in `evidence/PR2-D-RED-RECLAIM.md`. The outbox gate scope is
 **claim/lease/reclaim semantics; two concurrent in-process workers; lease ownership NOT enforced
 — stale-worker overwrite confirmed locally (SEC-004); test-only handler; no production handler**.
-`P1-RESTORE` remains BLOCKED, and
-Linux CI/independent review for PR2-D are still pending.
+`P1-RESTORE` remained BLOCKED in the PR2-D receipt; PR2-D Linux CI is recorded above, while
+independent review for PR2-D and Linux CI for SEC-004 remain pending.
+
+## SEC-004 local verification — 2026-10-25, Asia/Tehran
+
+Branch: `stg-001-sec004-fencing`, based on merged PR2-E `1262177`. The product fix is commit
+`f8c8d1d`; the gate scope update is `9d5cbde`. These are local Docker results, not a GitHub Actions
+run or independent reviewer approval. No push was performed.
+
+| Local check | Result | Counts / scope |
+|---|---|---|
+| Red SEC-004 tests before fix | PASS (expected failure) | `tests=2 skipped=0 errors=0 failures=2`; stale delivered and stale failed assertions both detected replacement-state changes |
+| Product fix | PASS | `mark_delivered` and `mark_failed` require `status='delivering' AND attempts=:attempts`, return whether one row changed, and make no schema/migration change |
+| SEC-004 focused tests after fix | PASS | `tests=2 skipped=0 errors=0 failures=0`; event-coordinated handlers, no guessed sleep |
+| Complete outbox group after fix | PASS | `tests=5 skipped=0 errors=0 failures=0` |
+| Unfenced negative control | PASS (expected failure) | External temporary copy of the unfenced dispatch module made both new tests fail: `tests=2 skipped=0 errors=0 failures=2`; copy/plugin/reports deleted |
+| Cleanup | PASS | Disposable PostgreSQL container removed with `docker rm -fv`; cleanup used admin and only registered test IDs |
+
+The exact sanitized receipt is `evidence/PR-SEC004-RED.md`. Fencing protects database state only;
+an external effect already performed by an old worker is not undone. Real provider handlers must
+be idempotent with a key derived from the message identifier. Linux CI for SEC-004 is pending.
 
 ## PR2-E local verification — 2026-10-25, Asia/Tehran
 
