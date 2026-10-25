@@ -1,7 +1,7 @@
 # وضعیت canonical پروژه
 
-**آخرین بازبینی:** ۲۰ اکتبر ۲۰۲۶، منطقه زمانی تهران؛ baseline در ۱۴ اکتبر پذیرفته شد
-**دامنه این به‌روزرسانی:** ثبت PR2-D، اصلاح محدود reclaim و local outbox evidence؛ بدون تغییر schema یا migration
+**آخرین بازبینی:** ۲۵ اکتبر ۲۰۲۶، منطقه زمانی تهران؛ baseline در ۱۴ اکتبر پذیرفته شد
+**دامنه این به‌روزرسانی:** ثبت پیاده‌سازی و receipt محلی PR2-E؛ بدون تغییر app یا migration
 
 این فایل تنها مرجع وضعیت جاری و تنها محل ثبت «قدم بعدی» رسمی است. وضعیت‌ها و قدم‌های
 قبلی در `task_plan.md`، `findings.md`، `progress.md` و Second Brain به‌عنوان تاریخچه
@@ -30,7 +30,7 @@
 | CI workflow syntax | `VERIFIED` | run #5 با commit `a20c620` در GitHub Actions کامل اجرا شد؛ workflow در PR2-B تغییر نکرد. |
 | migration chain روی DB خالی | `VERIFIED` | `alembic upgrade head` روی PostgreSQL 16 disposable موفق شد و `current=heads=0007` ثبت شد؛ محدودیت: نقش admin در CI، superuser بود و اثبات با admin غیر-superuser انجام نشده است. |
 | runtime role privilege probe | `VERIFIED_IN_CI` | PR2-C در `main` با `57d7a85` ادغام شد؛ Linux CI روی `554335d`، run `39386598021`: چهار DELETE با `42501` رد شدند و catalog شامل ۲۱ جدول در ۶ schema با صفر violation بود؛ بسته‌شدن نهایی SEC-003 به review مستقل وابسته است. |
-| PostgreSQL/Redis و CI runtime | `PARTIAL` | PR2-A، PR2-B و PR2-C در `main` ادغام شده‌اند (`3700466`, `59a9da2`, `57d7a85`). Linux CI برای PR2-C روی `554335d` سبز شد؛ reviewer مستقل PR2-C هنوز pending است. |
+| PostgreSQL/Redis و CI runtime | `PARTIAL` | PR2-A تا PR2-D در `main` ادغام شده‌اند؛ PR2-D با `9466b0a` و Linux CI run `39551172150`، گروه outbox را با صفر skip/error/failure سبز کرد؛ reviewer مستقل همچنان pending است. |
 | Telegram Mini App proof | `IMPLEMENTED_NOT_VERIFIED` | validator و route ثبت‌نام وجود دارد؛ deploy و smoke واقعی نداریم. |
 | registration/approval | `PARTIAL` | ثبت pending و اسکلت approval وجود دارد؛ زنجیره کامل session و MFA اثبات نشده است. |
 | session/auth resolver | `PARTIAL` | resolver و hash DB-backed وجود دارند؛ همه routeهای حساس هنوز به جریان نهایی وصل نیستند. |
@@ -42,14 +42,14 @@
 | scanning | `PARTIAL` | فاز اول متن‌محور تعریف شده؛ implementation فعلی محدود است و OCR خارج از MVP است. |
 | outbox/worker delivery | `VERIFIED_LOCALLY` | PR2-D روی PostgreSQL/Redis disposable: دو worker، ده event synthetic، reclaim و mark-failed هر سه case سبز؛ handler production همچنان خالی و SEC-004 باز است. |
 | rate limit/alerts/admin | `NOT_STARTED` | primitive یا placeholder وجود دارد، اما wiring و پنل عملیاتی کامل نیست. |
-| backup/restore evidence | `BLOCKED` | restore drill واقعی و قابل‌بررسی ثبت نشده است. |
+| backup/restore evidence | `VERIFIED_LOCALLY` | PR2-E روی PostgreSQL 16 disposable با `pg_dump --format=custom`/`pg_restore`، دو تست restore، و سه کنترل منفی محلی سبز شد؛ Linux CI و review مستقل هنوز ثبت نشده‌اند. |
 
 ## وضعیت فازها
 
-- **Phase 1: `PARTIAL`** — PR2-A، PR2-B و PR2-C ادغام شده‌اند. PR2-C در `main` با
-  `57d7a85` موجود است و Linux CI روی `554335d`، run `39386598021`، PASS شد:
-  `P1-ROLE-PRIVILEGES-XML tests=2 skipped=0 errors=0 failures=0`، `P1-ROLE=PASS` و
-  `Result: PARTIAL — 4 gates BLOCKED/NOT_RUN`.
+- **Phase 1: `PARTIAL`** — PR2-A تا PR2-D ادغام شده‌اند. PR2-D در `main` با `9466b0a` موجود
+  است و [Linux CI run `39551172150`](https://github.com/AliRabiee2286/account-security-bot/actions/runs/39551172150)
+  این receipt را ثبت کرد: `P1-REDIS-WORKERS-XML tests=3 skipped=0 errors=0 failures=0` و
+  `Result: PARTIAL — 3 gates BLOCKED/NOT_RUN`.
 - SEC-003 در Linux CI تأیید شد: catalog sweep همهٔ ۶ schema و ۲۱ جدول را پوشش داد، membership
   در `sentinel_app_role` و محدودیت attributeها را بررسی کرد و هیچ violationی نداشت. بسته‌شدن
   نهایی SEC-003 به review مستقل وابسته است؛ این receipt جای review را نمی‌گیرد.
@@ -79,21 +79,36 @@
   offline smoke، import smoke، shell syntax و diff check نیز موفق شدند. جزئیات در evidence
   ثبت شده‌اند.
   reviewer مستقل PR2-B همچنان pending است؛ `SEC-004` نیز مانع باز باقی می‌ماند.
+- PR2-E در شاخهٔ `stg-001-pr2e-restore` با commit `e3e03d7` پیاده‌سازی شد. تست مستقل
+  `tests/integration/test_restore_roundtrip.py` دو case دارد: round-trip کامل و corrupt-dump؛
+  هر دو با PostgreSQL 16 disposable برابر `tests=2 skipped=0 errors=0 failures=0` سبز شدند.
+  مقایسهٔ table-set، row count، md5 digest، head=`0007`، privilege و triggerهای audit انجام
+  می‌شود و dump فقط داخل container ساخته و در cleanup حذف می‌شود.
+- نخستین اجرای full gate، به‌دلیل inheritance شدن `RUN_INTEGRATION=1` در offline suite، پیش از
+  restore یک ردیف audit synthetic در همان DB گذاشت و precondition append-only restore را نقض
+  کرد (`error_type=non-empty-audit`). gate اصلاح شد تا suiteٔ offline را با `RUN_INTEGRATION=0`
+  اجرا کند و گروه‌های integration را جداگانه opt-in کند؛ اجرای بعدی با
+  `P1-RESTORE-DIAGNOSTIC=pytest_exit=0 xml_exit=0` و `STAGING_GATE_STATUS=0` سبز شد.
+- سه کنترل منفی محلی PR2-E نیز PASS شدند: تغییر یک ردیف با count برابر digest را نابرابر کرد،
+  حذف یک ردیف count را نابرابر کرد، و اعطای موقت `DELETE` به `sentinel_app_role` violation را
+  آشکار و سپس revoke کرد. این کنترل‌ها بیرون repository اجرا شدند و artifact/dump یا secretی
+  نگه‌داری نشد.
 - **Phase 2: `BLOCKED`** — WebAuthn واقعی، session issuance بعد از approval/MFA و Mini App
   deploy/integration هنوز انجام نشده‌اند.
 - `offline/static PASS` به‌تنهایی هیچ‌یک از این دو وضعیت را تغییر نمی‌دهد.
 
 ## تنها قدم بعدی رسمی
 
-**`PR2-E — restore با pg_dump/pg_restore؛ پس از receipt/review PR2-D`**
+**`PR2-E — ثبت receipt و review برای restore با pg_dump/pg_restore`**
 
-PR2-C در `main` با `57d7a85` ادغام شده و [Linux CI آن](https://github.com/AliRabiee2286/account-security-bot/actions/runs/39386598021)
-روی `554335d` سبز است: `P1-ROLE-PRIVILEGES-XML tests=2 skipped=0 errors=0 failures=0`،
-`P1-ROLE=PASS` و `Result: PARTIAL — 4 gates BLOCKED/NOT_RUN`. PR2-D روی شاخهٔ
-`stg-001-pr2d-outbox` به‌صورت محلی green شد؛ Linux CI و review مستقل آن هنوز pending هستند.
-SEC-003 نیز همچنان منتظر review مستقل است. مسیر reclaim روی PostgreSQL واقعی هیچ‌وقت کار نمی‌کرد
-و در PR2-D کشف و اصلاح شد؛ `app/` فقط در commit `f4527e7` تغییر کرد، migration/schema تغییر
-نکردند، و SEC-004 برای provider واقعی باز مانده است.
+PR2-D در `main` با `9466b0a` ادغام شده و [Linux CI آن](https://github.com/AliRabiee2286/account-security-bot/actions/runs/39551172150)
+این receipt را ثبت کرده است: `P1-REDIS-WORKERS-XML tests=3 skipped=0 errors=0 failures=0` و
+`Result: PARTIAL — 3 gates BLOCKED/NOT_RUN`. Reviewer مستقل PR2-D و SEC-003 همچنان pending
+هستند؛ مسیر reclaim در PR2-D اصلاح شد، migration/schema تغییر نکردند، و SEC-004 برای provider
+واقعی باز مانده است. مسیر reclaim روی PostgreSQL واقعی هیچ‌وقت کار نمی‌کرد و در PR2-D کشف و
+اصلاح شد؛ `app/` فقط در commit `f4527e7` تغییر کرد، migration/schema تغییر نکردند، و SEC-004
+برای provider واقعی باز مانده است. PR2-E در `e3e03d7` آمادهٔ review است؛ قدم بعدی ثبت CI
+Linux receipt و سپس review مستقل است. تا آن زمان Phase 1 همچنان `PARTIAL` می‌ماند.
 
 ## ممنوعیت‌های این baseline
 

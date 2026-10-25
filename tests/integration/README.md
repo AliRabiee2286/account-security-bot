@@ -69,7 +69,8 @@ and XML are removed on exit; XML counts, not log text, determine the result.
 
 Race scope: **one-time form consume; 20 barrier-synchronized pairs + 1 lock-wait overlap case,
 exactly one winner each; PostgreSQL; no HTTP**. This does not establish
-HTTP/CSRF/authorization, encryption, or provider behavior. `P1-RESTORE` remains BLOCKED.
+HTTP/CSRF/authorization, encryption, or provider behavior. At the time of the PR2-B run,
+`P1-RESTORE` was still BLOCKED.
 
 The local negative control injected an external copy of `consume_form` with only
 `consumed_at IS NULL` removed. The barrier race and the lock-wait overlap test both fail with
@@ -130,7 +131,7 @@ RUN_INTEGRATION=1 uv run pytest -q tests/integration/test_outbox_two_workers.py
 - `staging_gate.sh` runs this file independently as `P1-REDIS-WORKERS` with a minimum of three
   cases. Its exact scope is: **claim/lease/reclaim semantics; two concurrent in-process workers;
   lease ownership NOT enforced — stale-worker overwrite confirmed locally (SEC-004); test-only
-  handler; no production handler**. `P1-RESTORE` remains BLOCKED.
+  handler; no production handler**. In the PR2-D receipt, `P1-RESTORE` was still BLOCKED.
 - Before the fix, the group produced `tests=3 skipped=0 errors=0 failures=1`: the two-worker
   case and mark-failed case passed, while reclaim failed with
   `asyncpg.exceptions.UndefinedFunctionError` because `now() - :age` was untyped. The
@@ -144,6 +145,37 @@ RUN_INTEGRATION=1 uv run pytest -q tests/integration/test_outbox_two_workers.py
 The PR2-D gate proves PostgreSQL primitive semantics only. It does not prove provider delivery,
 idempotent production handlers, lease ownership, HTTP behavior, or production readiness.
 
+## PR2-E: logical PostgreSQL restore round trip
+
+```bash
+RUN_INTEGRATION=1 uv run pytest -q \
+  tests/integration/test_restore_roundtrip.py
+```
+
+- Set `RESTORE_POSTGRES_CONTAINER` to the running PostgreSQL 16 container name. The fixture
+  requires a `sentinel_admin` `MIGRATION_DATABASE_URL` and fails if the named container is absent;
+  it never turns an enabled missing-service run into a skip.
+- The module seeds only synthetic rows, including a delivered `core.outbox` row and one
+  append-only `audit.audit_events` row. The audit table must be empty before setup; the synthetic
+  audit row is intentionally not deleted. Non-audit synthetic rows are deleted with admin during
+  cleanup.
+- `pg_dump --format=custom` and `pg_restore` run through list-argument `docker exec` calls,
+  use `-U sentinel_admin`, keep the dump at a randomized `/tmp` path inside the container, and
+  remove it during cleanup. No `--no-owner` or `--no-acl` flags are used. Subprocesses are bounded
+  and raw output is not emitted.
+- The positive case compares the source and target table sets, every table's row count and md5
+  digest, migration head `0007`, effective runtime privileges, and the two audit trigger names.
+  The corrupt-dump case requires non-zero `pg_restore` and verifies that its target database is
+  dropped.
+- `staging_gate.sh` runs this file independently as `P1-RESTORE` with a minimum of two cases.
+  Its offline suite explicitly sets `RUN_INTEGRATION=0`; later integration groups opt in with
+  `RUN_INTEGRATION=1`. This prevents an earlier integration test from leaving an audit row that
+  would invalidate the restore precondition.
+- Local PR2-E receipt: `tests=2 skipped=0 errors=0 failures=0`, `P1-RESTORE=PASS`, and gate
+  exit `0`. Separate disposable controls detected an md5 mismatch after a row update, a count
+  mismatch after a row deletion, and a temporary `DELETE` privilege violation, then restored the
+  database state. This is local evidence only; Linux CI and independent review remain pending.
+
 Required later cases: rollback on failed audit write; HTTP webhook valid/invalid; encrypted
-credential cannot be read as plaintext; restore drill. See `docs/NEXT_SESSION.md` for the
-remaining PR boundaries.
+credential cannot be read as plaintext; encrypted/PITR production backup evidence. See
+`docs/NEXT_SESSION.md` for the remaining PR boundaries.
