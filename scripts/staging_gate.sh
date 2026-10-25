@@ -26,6 +26,7 @@ P1_RESTORE_STATUS=BLOCKED
 
 P1_ROLE_SCOPE='runtime role: DELETE denied (42501) on audit + 4 sensitive tables; catalog sweep over all app-schema tables: no DELETE/TRUNCATE, no UPDATE on audit; no CREATE on schemas; role attributes restricted'
 P1_REDIS_WORKERS_SCOPE='claim/lease/reclaim semantics; two concurrent in-process workers; lease ownership NOT enforced — stale-worker overwrite confirmed locally (SEC-004); test-only handler; no production handler'
+P1_RESTORE_SCOPE='logical pg_dump(custom)/pg_restore round-trip inside the PostgreSQL 16 container; synthetic data; row count + md5 digest equal for every app-schema table; head 0007; dump deleted; NOT encrypted; no PITR; not a production backup'
 
 redact_file() {
   sed -E \
@@ -194,7 +195,7 @@ write_summary() {
       printf '| P1-WEBHOOK-DELIVERY | %s | real Telegram delivery; synthetic token only loads Settings; no Telegram contact; outside PR1 |\n' "$P1_WEBHOOK_DELIVERY_STATUS"
       printf '| P1-RACE | %s | one-time form consume; 20 barrier-synchronized pairs + 1 lock-wait overlap case, exactly one winner each; PostgreSQL; no HTTP |\n' "$P1_RACE_STATUS"
       printf '| P1-REDIS-WORKERS | %s | %s |\n' "$P1_REDIS_WORKERS_STATUS" "$P1_REDIS_WORKERS_SCOPE"
-      printf '| P1-RESTORE | %s | backup/restore; test absent in PR1 |\n' "$P1_RESTORE_STATUS"
+      printf '| P1-RESTORE | %s | %s |\n' "$P1_RESTORE_STATUS" "$P1_RESTORE_SCOPE"
     } >> "$GITHUB_STEP_SUMMARY"
   fi
 }
@@ -224,7 +225,9 @@ uv run ruff check .
 uv run ruff format --check .
 uv run mypy app
 uv run lint-imports
-uv run pytest -q
+# Keep the offline suite isolated from staging-only fixtures; integration groups below opt in
+# explicitly and the restore group requires audit.audit_events to start empty.
+RUN_INTEGRATION=0 uv run pytest -q
 uv run python scripts/validate_migrations.py
 uv run python scripts/validate_config.py
 uv run python scripts/check_model_annotations.py
@@ -443,4 +446,17 @@ else
   exit "$outbox_status"
 fi
 echo '== scenario coverage not implemented in PR1 =='
-echo 'P1-RESTORE=BLOCKED no restore integration test/evidence harness exists in tests/'
+if [[ -z "${RESTORE_POSTGRES_CONTAINER:-}" ]]; then
+  P1_RESTORE_STATUS=BLOCKED
+  echo "P1-RESTORE=BLOCKED scope=$P1_RESTORE_SCOPE reason=RESTORE_POSTGRES_CONTAINER is not set"
+else
+  if run_pytest_group P1-RESTORE 2 tests/integration/test_restore_roundtrip.py; then
+    P1_RESTORE_STATUS=PASS
+    echo "P1-RESTORE=PASS scope=$P1_RESTORE_SCOPE"
+  else
+    restore_status=$?
+    P1_RESTORE_STATUS=FAIL
+    echo "P1-RESTORE=FAIL scope=$P1_RESTORE_SCOPE" >&2
+    exit "$restore_status"
+  fi
+fi
