@@ -25,7 +25,7 @@ P1_REDIS_WORKERS_STATUS=BLOCKED
 P1_RESTORE_STATUS=BLOCKED
 
 P1_ROLE_SCOPE='runtime role: DELETE denied (42501) on audit + 4 sensitive tables; catalog sweep over all app-schema tables: no DELETE/TRUNCATE, no UPDATE on audit; no CREATE on schemas; role attributes restricted'
-P1_REDIS_WORKERS_SCOPE='claim/lease/reclaim semantics; two concurrent in-process workers; lease ownership NOT enforced — stale-worker overwrite confirmed locally (SEC-004); test-only handler; no production handler'
+P1_REDIS_WORKERS_SCOPE='claim/lease/reclaim semantics; two concurrent in-process workers; lease ownership enforced by attempts fencing (SEC-004: stale worker cannot mark delivered or failed); test-only handler; no production handler; DB state only; handlers must be idempotent'
 P1_RESTORE_SCOPE='logical pg_dump(custom)/pg_restore round-trip inside the PostgreSQL 16 container; synthetic data; row count + md5 digest equal for every app-schema table; head 0007; dump deleted; NOT encrypted; no PITR; not a production backup'
 
 redact_file() {
@@ -436,7 +436,7 @@ else
   exit "$race_status"
 fi
 echo '== outbox claim/lease/reclaim =='
-if run_pytest_group P1-REDIS-WORKERS 3 tests/integration/test_outbox_two_workers.py; then
+if run_pytest_group P1-REDIS-WORKERS 5 tests/integration/test_outbox_two_workers.py; then
   P1_REDIS_WORKERS_STATUS=PASS
   echo "P1-REDIS-WORKERS=PASS scope=$P1_REDIS_WORKERS_SCOPE"
 else
@@ -445,7 +445,7 @@ else
   echo "P1-REDIS-WORKERS=FAIL scope=$P1_REDIS_WORKERS_SCOPE" >&2
   exit "$outbox_status"
 fi
-echo '== scenario coverage not implemented in PR1 =='
+echo '== logical backup/restore round-trip =='
 if [[ -z "${RESTORE_POSTGRES_CONTAINER:-}" ]]; then
   P1_RESTORE_STATUS=BLOCKED
   echo "P1-RESTORE=BLOCKED scope=$P1_RESTORE_SCOPE reason=RESTORE_POSTGRES_CONTAINER is not set"
