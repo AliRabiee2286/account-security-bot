@@ -1,7 +1,7 @@
-# دستور جلسه بعد — PR2-E، restore پس از ادغام و receipt PR2-D
+# دستور جلسه بعد — receipt/review برای PR2-E پس از ادغام و receipt PR2-D
 
-**اولین کار جلسه بعد:** PR2-E restore را روی شاخهٔ `stg-001-pr2e-restore` اجرا و verify کنید؛
-push/PR با صاحب پروژه است.
+**اولین کار جلسه بعد:** receipt Linux CI برای `P1-RESTORE` را روی شاخهٔ
+`stg-001-pr2e-restore` جمع‌آوری و سپس review مستقل را ثبت کنید؛ push/PR با صاحب پروژه است.
 PR2-D در `main` با `9466b0a` ادغام شده و [Linux CI آن](https://github.com/AliRabiee2286/account-security-bot/actions/runs/39551172150)
 با `P1-REDIS-WORKERS-XML tests=3 skipped=0 errors=0 failures=0` و
 `Result: PARTIAL — 3 gates BLOCKED/NOT_RUN` ثبت شده است. Reviewer مستقل PR2-D همچنان pending
@@ -180,16 +180,28 @@ SQLهای raw دیگر در `app/` که فقط `now()` ثابت دارند (`rev
 
 ### PR2-E — restore با pg_dump/pg_restore
 
+- وضعیت فعلی: پیاده‌سازی محلی در commit `e3e03d7` روی شاخهٔ
+  `stg-001-pr2e-restore` انجام شده است؛ `app/` و `migrations/` تغییر نکرده‌اند.
 - اثبات: logical round-trip روی PostgreSQL 16 با dump customِ بدون رمزنگاری روی دادهٔ
   ساختگی، DB مقصد جدا، checksum، row count/digest و head=`0007`؛ dump در cleanup حذف
   می‌شود و upload نمی‌شود. این scope encrypted backup و PITR را شامل نمی‌کند؛ encryption
   backup production در `WP-8` است.
-- مرز: بدون تغییر app/migration؛ script/CI/runbook ممکن است در PR این بسته تغییر کند.
-  `pg_dump` و `pg_restore` باید version-check و در صورت نیاز pinned install شوند.
+- مرز: بدون تغییر app/migration؛ فقط تست مستقل، gate و یک env در CI تغییر کرده‌اند.
+  `pg_dump` و `pg_restore` با `-U sentinel_admin` داخل PostgreSQL 16 container اجرا می‌شوند؛
+  dump به host یا artifact منتقل نمی‌شود و `--no-owner`/`--no-acl` استفاده نمی‌شود.
 - CI/gate: یک اجرای مستقل restore؛ `P1-RESTORE` فقط از exit code و digest/row-count
   verification تعیین شود.
 - پذیرش: restore exit=0، source/target برابر، cleanup موفق و هیچ dump در artifact یا
   upload؛ رمزنگاری و PITR شرط این gate نیستند.
+- receipt محلی: `P1-RESTORE-XML tests=2 skipped=0 errors=0 failures=0`،
+  `P1-RESTORE=PASS` و `STAGING_GATE_STATUS=0`. دو تست شامل round-trip و corrupt-dump هستند؛
+  head=`0007`، table-set، count/digest، privilege، audit trigger و حذف dump بررسی شدند.
+- کنترل منفی محلی: digest بعد از تغییر ردیف، count بعد از حذف ردیف، و privilege بعد از grant
+  موقت `DELETE` هر سه mismatch/violation مورد انتظار را تشخیص دادند و grant revoke شد.
+- نکتهٔ اجرایی: `staging_gate.sh` suiteٔ offline را با `RUN_INTEGRATION=0` اجرا می‌کند تا
+  تست‌های integration قبل از restore روی همان DB ردیف audit نسازند؛ گروه‌های integration
+  بعداً مستقل و با opt-in اجرا می‌شوند. اجرای اولیه با inheritance شدن `RUN_INTEGRATION=1`
+  به `error_type=non-empty-audit` رسید و تکرار شد؛ اجرای بعدی سبز بود.
 - توقف/خطر: نبود ابزار، target DB نامطمئن یا checksum mismatch؛ `BLOCKED` و گزارش
   sanitized.
 
@@ -254,7 +266,8 @@ admin غیر-superuser بعد از `PR2-E` و پس از تصمیم طراحی ج
 
 ## قدم بعدی رسمی
 
-**`PR2-E — restore با pg_dump/pg_restore`**؛
+**`ثبت Linux CI receipt و review مستقل برای PR2-E — restore با pg_dump/pg_restore`**؛
 PR2-D در `main` ادغام و receipt لینوکس آن ثبت شده است. PR2-E اکنون بستهٔ رسمی بعدی است؛
-SEC-004 تا طراحی ownership برای هر provider واقعی مانع باز می‌ماند و `P1-RESTORE` هنوز
-BLOCKED است.
+پیاده‌سازی محلی آن در `e3e03d7` سبز شده، اما تا receipt Linux CI و review مستقل،
+`P1-RESTORE` در evidence نهایی verified-in-CI محسوب نمی‌شود. SEC-004 تا طراحی ownership
+برای هر provider واقعی مانع باز می‌ماند.

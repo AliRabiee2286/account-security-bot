@@ -17,7 +17,7 @@ Offline/static PASS is informative and does not close Phase 1.
 | P1-CI | uv sync, ruff, mypy, import-linter, pytest | BLOCKED | | |
 | P1-RACE | 20 pairs + lock-wait overlap + replay/expiry; PostgreSQL; no HTTP | PASS (Linux CI; independent reviewer pending) | | |
 | P1-WEBHOOK | invalid secret 403, valid secret 200 | BLOCKED | | |
-| P1-RESTORE | encrypted backup restore and checksum | BLOCKED | | |
+| P1-RESTORE | logical PostgreSQL 16 `pg_dump --format=custom`/`pg_restore`; synthetic data; row count + md5 digest; head `0007`; dump cleanup | VERIFIED_LOCALLY | PR2-E local receipt below | |
 | P1-SECURITY | review S-011..S-022 applicable controls | BLOCKED | | |
 | P1-OFFLINE | lock, compile, unit, Ruff, mypy, import boundaries, offline smoke | PASS (workspace only) | | |
 
@@ -200,3 +200,32 @@ The exact red receipt is in `evidence/PR2-D-RED-RECLAIM.md`. The outbox gate sco
 — stale-worker overwrite confirmed locally (SEC-004); test-only handler; no production handler**.
 `P1-RESTORE` remains BLOCKED, and
 Linux CI/independent review for PR2-D are still pending.
+
+## PR2-E local verification — 2026-10-25, Asia/Tehran
+
+Branch: `stg-001-pr2e-restore`, based on merged PR2-D `9466b0a`. Implementation commit:
+`e3e03d7` (`test: add PR2-E restore round-trip gate`). These are local Docker results, not a
+GitHub Actions run or independent reviewer approval. No push was performed. `app/` and
+`migrations/` were not changed.
+
+| Local check | Result | Counts / scope |
+|---|---|---|
+| Independent restore group | PASS | PostgreSQL 16 disposable container; `tests=2 skipped=0 errors=0 failures=0`; source/target table sets, row counts and md5 digests matched; migration head `0007` matched |
+| Restore privilege and trigger checks | PASS | Target catalog had no runtime DELETE/TRUNCATE or audit UPDATE violations; `trg_audit_no_update` and `trg_audit_no_truncate` were present |
+| Corrupt-dump control | PASS | Truncating the in-container custom dump made `pg_restore` return non-zero and the target database was dropped afterward |
+| Full local staging gate | PASS | `P1-RESTORE-DIAGNOSTIC=pytest_exit=0 xml_exit=0`; `P1-RESTORE=PASS`; `STAGING_GATE_STATUS=0` |
+| Digest negative control | PASS (expected mismatch) | Changing one restored `identity.departments` row kept the count equal and changed the md5 digest |
+| Count negative control | PASS (expected mismatch) | Deleting one restored `identity.departments` row changed the row count |
+| Privilege negative control | PASS (expected violation) | Temporary `GRANT DELETE` to `sentinel_app_role` was detected and then revoked |
+| Audit precondition and cleanup | PASS | Source audit count was `0` before the gate and `1` after the successful run; the synthetic audit row was intentionally not deleted because the audit table is append-only; disposable containers were removed |
+| Offline/project checks | PASS / known debt | `ruff check .`, `ruff format --check .`, `uv run python -m pytest -q` (`77 passed, 13 skipped`), `bash -n`, and `git diff --check` passed; `uv run mypy .` remains the recorded repository-wide `TEST-003` failure with 46 errors |
+
+The first full-gate attempt failed before restore because the gate inherited `RUN_INTEGRATION=1`
+for its offline `uv run pytest -q` step; an earlier integration test left one audit row in the
+same disposable database, violating the restore precondition. The focused fix was to run that
+offline step with `RUN_INTEGRATION=0` while keeping each later integration group explicitly
+enabled. The rerun passed without changing application code or migrations.
+
+This local receipt does not claim encrypted backup, PITR, production backup readiness, Linux CI
+evidence, or independent review. The three negative-control harnesses and any dump files were
+kept outside the repository and removed after the run.
