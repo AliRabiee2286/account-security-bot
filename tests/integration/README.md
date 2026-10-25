@@ -164,17 +164,22 @@ RUN_INTEGRATION=1 uv run pytest -q \
   remove it during cleanup. No `--no-owner` or `--no-acl` flags are used. Subprocesses are bounded
   and raw output is not emitted.
 - The positive case compares the source and target table sets, every table's row count and md5
-  digest, migration head `0007`, effective runtime privileges, and the two audit trigger names.
+  digest, migration head `0007`, no forbidden privileges after restore (DELETE/TRUNCATE; audit
+  UPDATE); allowed privileges not compared (TEST-005), and the two audit trigger names.
   The corrupt-dump case requires non-zero `pg_restore` and verifies that its target database is
   dropped.
 - `staging_gate.sh` runs this file independently as `P1-RESTORE` with a minimum of two cases.
   Its offline suite explicitly sets `RUN_INTEGRATION=0`; later integration groups opt in with
   `RUN_INTEGRATION=1`. This prevents an earlier integration test from leaving an audit row that
   would invalidate the restore precondition.
-- Local PR2-E receipt: `tests=2 skipped=0 errors=0 failures=0`, `P1-RESTORE=PASS`, and gate
-  exit `0`. Separate disposable controls detected an md5 mismatch after a row update, a count
-  mismatch after a row deletion, and a temporary `DELETE` privilege violation, then restored the
-  database state. This is local evidence only; Linux CI and independent review remain pending.
+- PR2-E is merged into `main` at `1262177`. The local receipt and Linux CI run
+  [40222607578](https://github.com/AliRabiee2286/account-security-bot/actions/runs/40222607578)
+  both report `tests=2 skipped=0 errors=0 failures=0` and `P1-RESTORE=PASS`; CI overall is
+  `Result: PARTIAL — 2 gates BLOCKED/NOT_RUN`. Separate disposable controls detected an md5
+  mismatch after a row update, a count mismatch after a row deletion, and a temporary forbidden
+  `DELETE` privilege, then restored the database state. The privilege scope is no forbidden
+  privileges after restore (DELETE/TRUNCATE; audit UPDATE); allowed privileges not compared
+  (TEST-005). Independent review remains pending.
 
 Required later cases: rollback on failed audit write; HTTP webhook valid/invalid; encrypted
 credential cannot be read as plaintext; encrypted/PITR production backup evidence. See

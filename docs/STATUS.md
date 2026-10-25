@@ -1,7 +1,7 @@
 # وضعیت canonical پروژه
 
 **آخرین بازبینی:** ۲۵ اکتبر ۲۰۲۶، منطقه زمانی تهران؛ baseline در ۱۴ اکتبر پذیرفته شد
-**دامنه این به‌روزرسانی:** ثبت پیاده‌سازی و receipt محلی PR2-E؛ بدون تغییر app یا migration
+**دامنه این به‌روزرسانی:** ثبت ادغام PR2-E و receipt لینوکس CI؛ بدون تغییر app یا migration
 
 این فایل تنها مرجع وضعیت جاری و تنها محل ثبت «قدم بعدی» رسمی است. وضعیت‌ها و قدم‌های
 قبلی در `task_plan.md`، `findings.md`، `progress.md` و Second Brain به‌عنوان تاریخچه
@@ -42,7 +42,7 @@
 | scanning | `PARTIAL` | فاز اول متن‌محور تعریف شده؛ implementation فعلی محدود است و OCR خارج از MVP است. |
 | outbox/worker delivery | `VERIFIED_LOCALLY` | PR2-D روی PostgreSQL/Redis disposable: دو worker، ده event synthetic، reclaim و mark-failed هر سه case سبز؛ handler production همچنان خالی و SEC-004 باز است. |
 | rate limit/alerts/admin | `NOT_STARTED` | primitive یا placeholder وجود دارد، اما wiring و پنل عملیاتی کامل نیست. |
-| backup/restore evidence | `VERIFIED_LOCALLY` | PR2-E روی PostgreSQL 16 disposable با `pg_dump --format=custom`/`pg_restore`، دو تست restore، و سه کنترل منفی محلی سبز شد؛ Linux CI و review مستقل هنوز ثبت نشده‌اند. |
+| backup/restore evidence | `VERIFIED_IN_CI` | PR2-E در `main` با `1262177` ادغام شد؛ local و Linux CI با دو تست restore سبز شدند. بررسی restore شامل no forbidden privileges after restore (DELETE/TRUNCATE; audit UPDATE); allowed privileges not compared (TEST-005) است؛ review مستقل هنوز pending است. |
 
 ## وضعیت فازها
 
@@ -79,7 +79,7 @@
   offline smoke، import smoke، shell syntax و diff check نیز موفق شدند. جزئیات در evidence
   ثبت شده‌اند.
   reviewer مستقل PR2-B همچنان pending است؛ `SEC-004` نیز مانع باز باقی می‌ماند.
-- PR2-E در شاخهٔ `stg-001-pr2e-restore` با commit `e3e03d7` پیاده‌سازی شد. تست مستقل
+- PR2-E با implementation commit `e3e03d7` و merge commit `1262177` در `main` ادغام شد. تست مستقل
   `tests/integration/test_restore_roundtrip.py` دو case دارد: round-trip کامل و corrupt-dump؛
   هر دو با PostgreSQL 16 disposable برابر `tests=2 skipped=0 errors=0 failures=0` سبز شدند.
   مقایسهٔ table-set، row count، md5 digest، head=`0007`، privilege و triggerهای audit انجام
@@ -88,10 +88,14 @@
   restore یک ردیف audit synthetic در همان DB گذاشت و precondition append-only restore را نقض
   کرد (`error_type=non-empty-audit`). gate اصلاح شد تا suiteٔ offline را با `RUN_INTEGRATION=0`
   اجرا کند و گروه‌های integration را جداگانه opt-in کند؛ اجرای بعدی با
-  `P1-RESTORE-DIAGNOSTIC=pytest_exit=0 xml_exit=0` و `STAGING_GATE_STATUS=0` سبز شد.
+  `P1-RESTORE-DIAGNOSTIC=pytest_exit=0 xml_exit=0` و `STAGING_GATE_STATUS=0` سبز شد. Linux CI نیز
+  `P1-RESTORE-XML tests=2 skipped=0 errors=0 failures=0`، `P1-RESTORE=PASS` و
+  `Result: PARTIAL — 2 gates BLOCKED/NOT_RUN` را ثبت کرد.
 - سه کنترل منفی محلی PR2-E نیز PASS شدند: تغییر یک ردیف با count برابر digest را نابرابر کرد،
   حذف یک ردیف count را نابرابر کرد، و اعطای موقت `DELETE` به `sentinel_app_role` violation را
-  آشکار و سپس revoke کرد. این کنترل‌ها بیرون repository اجرا شدند و artifact/dump یا secretی
+  آشکار و سپس revoke کرد؛ بررسی restore فقط no forbidden privileges after restore
+  (DELETE/TRUNCATE; audit UPDATE) را پوشش می‌دهد و allowed privileges not compared (TEST-005).
+  این کنترل‌ها بیرون repository اجرا شدند و artifact/dump یا secretی
   نگه‌داری نشد.
 - **Phase 2: `BLOCKED`** — WebAuthn واقعی، session issuance بعد از approval/MFA و Mini App
   deploy/integration هنوز انجام نشده‌اند.
@@ -107,8 +111,10 @@ PR2-D در `main` با `9466b0a` ادغام شده و [Linux CI آن](https://gi
 هستند؛ مسیر reclaim در PR2-D اصلاح شد، migration/schema تغییر نکردند، و SEC-004 برای provider
 واقعی باز مانده است. مسیر reclaim روی PostgreSQL واقعی هیچ‌وقت کار نمی‌کرد و در PR2-D کشف و
 اصلاح شد؛ `app/` فقط در commit `f4527e7` تغییر کرد، migration/schema تغییر نکردند، و SEC-004
-برای provider واقعی باز مانده است. PR2-E در `e3e03d7` آمادهٔ review است؛ قدم بعدی ثبت CI
-Linux receipt و سپس review مستقل است. تا آن زمان Phase 1 همچنان `PARTIAL` می‌ماند.
+برای provider واقعی باز مانده است. PR2-E در `main` با `1262177` ادغام شده و [Linux CI run `40222607578`](https://github.com/AliRabiee2286/account-security-bot/actions/runs/40222607578)
+این receipt را ثبت کرده است: `P1-RESTORE-XML tests=2 skipped=0 errors=0 failures=0`,
+`P1-RESTORE=PASS` و `Result: PARTIAL — 2 gates BLOCKED/NOT_RUN`. بررسی مستقل هنوز pending
+است؛ تا بسته‌شدن سایر gateها Phase 1 همچنان `PARTIAL` می‌ماند.
 
 ## ممنوعیت‌های این baseline
 

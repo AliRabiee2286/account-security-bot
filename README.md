@@ -59,11 +59,10 @@ security smoke. This does **not** make the project production-ready. Phase 1 is 
 PR2-C at `57d7a85`, and PR2-D at `9466b0a`. Linux CI passed for PR2-D in the
 [PR2-D run](https://github.com/AliRabiee2286/account-security-bot/actions/runs/39551172150)
 with `P1-REDIS-WORKERS-XML tests=3 skipped=0 errors=0 failures=0` and
-`Result: PARTIAL — 3 gates BLOCKED/NOT_RUN`. PR2-E implementation is now on
-`stg-001-pr2e-restore` at `e3e03d7`; its local disposable restore receipt is recorded below.
-The independent reviewer is still pending. Real Telegram delivery, Linux CI restore evidence,
-and two-person security review remain open; local or CI PASS for one gate does not close the
-release gate.
+`Result: PARTIAL — 3 gates BLOCKED/NOT_RUN`. PR2-E is merged into `main` at `1262177`; Linux
+CI passed the restore group in [run `40222607578`](https://github.com/AliRabiee2286/account-security-bot/actions/runs/40222607578).
+The independent reviewer is still pending. Real Telegram delivery and two-person security review
+remain open; local or CI PASS for one gate does not close the release gate.
 
 Run the complete environment gate only from `docs/STAGING_RUNBOOK.md`. Runtime uses
 `DATABASE_URL` with the least-privileged `sentinel_app` role; Alembic uses the separate
@@ -170,12 +169,13 @@ combining `now()` with a timed parameter was found. See `task_plan.md` TEST-002 
 
 ### Logical restore gate (PR2-E)
 
-PR2-E is implemented on `stg-001-pr2e-restore` at `e3e03d7`. It adds one independent
+PR2-E is merged into `main` at `1262177` (implementation `e3e03d7`). It adds one independent
 integration module, one `P1-RESTORE` staging-gate group, and the CI container-name variable;
 `app/` and `migrations/` were not changed. The scope is deliberately limited to a logical
 PostgreSQL 16 `pg_dump --format=custom` / `pg_restore` round trip inside the disposable
 container: synthetic data, table-set equality, row counts, md5 digests, migration head
-`0007`, runtime privilege checks, audit-trigger presence, and in-container dump cleanup. It
+`0007`, no forbidden privileges after restore (DELETE/TRUNCATE; audit UPDATE); allowed privileges
+not compared (TEST-005), audit-trigger presence, and in-container dump cleanup. It
 does not claim encrypted backup, PITR, or a production backup process.
 
 The local full gate passed with:
@@ -187,12 +187,22 @@ P1-RESTORE=PASS
 STAGING_GATE_STATUS=0
 ```
 
+Linux CI also passed the independent restore group:
+
+```text
+P1-RESTORE-XML tests=2 skipped=0 errors=0 failures=0
+P1-RESTORE=PASS
+Result: PARTIAL — 2 gates BLOCKED/NOT_RUN
+```
+
+See the [PR2-E Linux CI run](https://github.com/AliRabiee2286/account-security-bot/actions/runs/40222607578).
+
 The three disposable negative controls also passed: changing a restored row produced an md5
 mismatch with equal counts, deleting a restored row produced a count mismatch, and a temporary
-`DELETE` grant to `sentinel_app_role` was detected by the privilege check and revoked. The
+`DELETE` grant to `sentinel_app_role` was detected by the no forbidden privileges after restore
+check (DELETE/TRUNCATE; audit UPDATE); allowed privileges not compared (TEST-005), and revoked. The
 append-only synthetic audit row is intentionally retained until the disposable database is
-destroyed; it is not cleanup data. This is local evidence only, not a Linux CI receipt or an
-independent review.
+destroyed; it is not cleanup data. Independent review remains pending.
 
 ## Authentication gate
 

@@ -1,7 +1,10 @@
-# دستور جلسه بعد — receipt/review برای PR2-E پس از ادغام و receipt PR2-D
+# دستور جلسه بعد — review مستقل PR2-E پس از receipt لینوکس آن
 
-**اولین کار جلسه بعد:** receipt Linux CI برای `P1-RESTORE` را روی شاخهٔ
-`stg-001-pr2e-restore` جمع‌آوری و سپس review مستقل را ثبت کنید؛ push/PR با صاحب پروژه است.
+**وضعیت فعلی:** PR2-E در `main` با `1262177` ادغام شده و Linux CI آن در
+[run `40222607578`](https://github.com/AliRabiee2286/account-security-bot/actions/runs/40222607578)
+با `P1-RESTORE-XML tests=2 skipped=0 errors=0 failures=0`، `P1-RESTORE=PASS` و
+`Result: PARTIAL — 2 gates BLOCKED/NOT_RUN` ثبت شده است. **اولین کار جلسه بعد:** review مستقل
+PR2-E را ثبت کنید؛ push/PR با صاحب پروژه است.
 PR2-D در `main` با `9466b0a` ادغام شده و [Linux CI آن](https://github.com/AliRabiee2286/account-security-bot/actions/runs/39551172150)
 با `P1-REDIS-WORKERS-XML tests=3 skipped=0 errors=0 failures=0` و
 `Result: PARTIAL — 3 gates BLOCKED/NOT_RUN` ثبت شده است. Reviewer مستقل PR2-D همچنان pending
@@ -178,10 +181,10 @@ SQLهای raw دیگر در `app/` که فقط `now()` ثابت دارند (`rev
 `delivering_at=now()` و timestampهای server-default) پارامتر زمان‌دار ندارند و در این فهرست
 نیامدند. `make_interval` یا SQL raw دیگری با `now()` و پارامتر زمان‌دار پیدا نشد.
 
-### PR2-E — restore با pg_dump/pg_restore
+### PR2-E — restore با pg_dump/pg_restore — ادغام‌شده و تأییدشده در Linux CI
 
-- وضعیت فعلی: پیاده‌سازی محلی در commit `e3e03d7` روی شاخهٔ
-  `stg-001-pr2e-restore` انجام شده است؛ `app/` و `migrations/` تغییر نکرده‌اند.
+- وضعیت فعلی: implementation commit `e3e03d7` با merge commit `1262177` در `main` ادغام شده
+  است؛ `app/` و `migrations/` تغییر نکرده‌اند.
 - اثبات: logical round-trip روی PostgreSQL 16 با dump customِ بدون رمزنگاری روی دادهٔ
   ساختگی، DB مقصد جدا، checksum، row count/digest و head=`0007`؛ dump در cleanup حذف
   می‌شود و upload نمی‌شود. این scope encrypted backup و PITR را شامل نمی‌کند؛ encryption
@@ -193,9 +196,11 @@ SQLهای raw دیگر در `app/` که فقط `now()` ثابت دارند (`rev
   verification تعیین شود.
 - پذیرش: restore exit=0، source/target برابر، cleanup موفق و هیچ dump در artifact یا
   upload؛ رمزنگاری و PITR شرط این gate نیستند.
-- receipt محلی: `P1-RESTORE-XML tests=2 skipped=0 errors=0 failures=0`،
-  `P1-RESTORE=PASS` و `STAGING_GATE_STATUS=0`. دو تست شامل round-trip و corrupt-dump هستند؛
-  head=`0007`، table-set، count/digest، privilege، audit trigger و حذف dump بررسی شدند.
+- receipt محلی و Linux CI: `P1-RESTORE-XML tests=2 skipped=0 errors=0 failures=0`،
+  `P1-RESTORE=PASS` و `Result: PARTIAL — 2 gates BLOCKED/NOT_RUN` در CI؛ اجرای محلی
+  `STAGING_GATE_STATUS=0` بود. دو تست شامل round-trip و corrupt-dump هستند؛ head=`0007`,
+  table-set، count/digest، no forbidden privileges after restore (DELETE/TRUNCATE; audit UPDATE);
+  allowed privileges not compared (TEST-005)، audit trigger و حذف dump بررسی شدند.
 - کنترل منفی محلی: digest بعد از تغییر ردیف، count بعد از حذف ردیف، و privilege بعد از grant
   موقت `DELETE` هر سه mismatch/violation مورد انتظار را تشخیص دادند و grant revoke شد.
 - نکتهٔ اجرایی: `staging_gate.sh` suiteٔ offline را با `RUN_INTEGRATION=0` اجرا می‌کند تا
@@ -255,7 +260,7 @@ run مجاز به حذف‌اند؛ volumeهای قدیمی workspace را پا�
 
 ## ترتیب و شرط موفقیت
 
-ترتیب پیشنهادی: `PR2-A`، `PR2-B`، `PR2-C`، `PR2-D`، `PR2-E`. `PR2-F` برای اثبات
+ترتیب پیشنهادی: `PR2-A`، `PR2-B`، `PR2-C`، `PR2-D`، `PR2-E`، `PR2-F`. `PR2-F` برای اثبات
 admin غیر-superuser بعد از `PR2-E` و پس از تصمیم طراحی جدا شروع می‌شود. هر بسته مستقل review
 می‌شود و merge آن فقط همان gate را به‌روزرسانی می‌کند. Phase 1 فقط وقتی از `PARTIAL`
 خارج می‌شود که هر پنج گروه، بدون skip، در CI لینوکسی GitHub اجرا شوند، exit code صفر
