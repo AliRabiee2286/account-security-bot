@@ -41,6 +41,7 @@ RECLAIM_EVENT_TYPE = "pr2d.reclaim"
 FAILED_EVENT_TYPE = "pr2d.failed"
 STALE_DELIVERED_EVENT_TYPE = "sec004.stale-delivered"
 STALE_FAILED_EVENT_TYPE = "sec004.stale-failed"
+STALE_FAILURE_AFTER_DELIVERED_EVENT_TYPE = "sec004.stale-failure-after-delivered"
 
 pytestmark = pytest.mark.skipif(
     os.getenv("RUN_INTEGRATION") != "1",
@@ -255,7 +256,7 @@ async def _fetch_outbox_state(
     return await database.admin_connection.fetch(
         """
         SELECT id, event_type, status, attempts,
-               available_at, delivering_at,
+               available_at, delivering_at, delivered_at,
                available_at <= now() AS available,
                available_at > now() AS available_in_future,
                delivering_at IS NULL AS delivery_timestamp_clear,
@@ -695,6 +696,117 @@ async def test_stale_worker_cannot_mark_failed_after_reclaim(  # noqa: PLR0915 -
     finally:
         worker_a_release.set()
         worker_b_release.set()
+        for task in tasks:
+            if not task.done():
+                task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+
+
+async def test_stale_failure_after_replacement_delivered_keeps_row_delivered(  # noqa: PLR0915 - explicit fence assertions
+    outbox_database: OutboxDatabase,
+) -> None:
+    message_id = await _insert_message(
+        outbox_database,
+        event_type=STALE_FAILURE_AFTER_DELIVERED_EVENT_TYPE,
+        payload={"case": "sec004-stale-failure-after-delivered"},
+    )
+    _require(
+        await _pending_claimable_non_test_count(outbox_database, [message_id]) == 0,
+        "Preflight found pending claimable non-synthetic rows",
+    )
+
+    worker_a_entered = asyncio.Event()
+    worker_a_release = asyncio.Event()
+    worker_b_entered = asyncio.Event()
+
+    async def handler(message: ClaimedMessage) -> None:
+        worker = CURRENT_WORKER.get()
+        if worker == "worker-a":
+            _require(
+                message.attempts == 1,
+                "Stale delivered-after-failure worker did not claim attempt one",
+            )
+            worker_a_entered.set()
+            await worker_a_release.wait()
+            raise RuntimeError("synthetic stale failure after delivered replacement")
+        _require(worker == "worker-b", "Unexpected delivered-after-failure worker identity")
+        _require(message.attempts == 2, "Replacement delivered worker did not claim attempt two")
+        worker_b_entered.set()
+
+    handlers: dict[str, WorkerHandler] = {STALE_FAILURE_AFTER_DELIVERED_EVENT_TYPE: handler}
+
+    async def worker(name: str) -> bool:
+        token = CURRENT_WORKER.set(name)
+        try:
+            return await run_once(handlers)
+        finally:
+            CURRENT_WORKER.reset(token)
+
+    tasks: list[asyncio.Task[bool]] = []
+    try:
+        async with asyncio.timeout(OPERATION_TIMEOUT):
+            worker_a_task = asyncio.create_task(worker("worker-a"))
+            tasks.append(worker_a_task)
+            await worker_a_entered.wait()
+
+            first_claim = await _fetch_outbox_state(outbox_database, [message_id])
+            _require(
+                len(first_claim) == 1
+                and first_claim[0]["status"] == "delivering"
+                and first_claim[0]["attempts"] == 1,
+                "First delivered-after-failure claim did not hold attempt one",
+            )
+
+            await outbox_database.admin_connection.execute(
+                "UPDATE core.outbox SET delivering_at = now() - interval '1 day' WHERE id = $1",
+                message_id,
+            )
+            reclaimed = await reclaim_stuck(age=timedelta(minutes=10))
+            _require(
+                reclaimed == 1,
+                "Exactly one stale delivered-after-failure row was expected to be reclaimed",
+            )
+
+            reclaimed_state = await _fetch_outbox_state(outbox_database, [message_id])
+            _require(
+                len(reclaimed_state) == 1
+                and reclaimed_state[0]["status"] == "pending"
+                and reclaimed_state[0]["attempts"] == 1,
+                "Delivered-after-failure row did not return to pending before replacement claim",
+            )
+
+            worker_b_task = asyncio.create_task(worker("worker-b"))
+            tasks.append(worker_b_task)
+            await worker_b_entered.wait()
+            _require(await worker_b_task, "Replacement delivered worker did not finish")
+
+            delivered_state = await _fetch_outbox_state(outbox_database, [message_id])
+            _require(
+                len(delivered_state) == 1
+                and delivered_state[0]["status"] == "delivered"
+                and delivered_state[0]["attempts"] == 2
+                and delivered_state[0]["delivered_at"] is not None
+                and delivered_state[0]["last_error"] is None,
+                "Replacement worker did not finish a clean delivered state",
+            )
+            delivered_at = delivered_state[0]["delivered_at"]
+            last_error = delivered_state[0]["last_error"]
+
+            worker_a_release.set()
+            _require(await worker_a_task, "Stale failure worker did not finish")
+            final = await _fetch_outbox_state(outbox_database, [message_id])
+            _require(
+                len(final) == 1
+                and final[0]["status"] == "delivered"
+                and final[0]["attempts"] == 2
+                and final[0]["delivered_at"] == delivered_at
+                and final[0]["last_error"] == last_error,
+                "Stale failure changed the delivered replacement row",
+            )
+    except TimeoutError:
+        pytest.fail("Stale failure-after-delivered worker coordination timed out", pytrace=False)
+    finally:
+        worker_a_release.set()
         for task in tasks:
             if not task.done():
                 task.cancel()
