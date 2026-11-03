@@ -142,17 +142,17 @@ PR2-D is merged into `main` at `9466b0a`:
 The local disposable gate recorded:
 
 ```text
-P1-REDIS-WORKERS-XML tests=5 skipped=0 errors=0 failures=0
+P1-REDIS-WORKERS-XML tests=6 skipped=0 errors=0 failures=0
 P1-REDIS-WORKERS=PASS scope=claim/lease/reclaim semantics; two concurrent in-process workers; lease ownership enforced by attempts fencing (SEC-004: stale worker cannot mark delivered or failed); test-only handler; no production handler; DB state only; handlers must be idempotent
 ```
 
 The first test used two concurrent `run_once()` workers, ten synthetic events, a local
 test-only handler, and an untouched non-target row. The reclaim test seeded an old
-`delivering` row with admin, reclaimed it without sleep, and delivered it once. The fourth and
-fifth tests coordinate stale delivered/failed workers with events, reclaim the row, and assert
-that only the worker holding the claimed `attempts` value can change database state. The existing
-typed `mark_failed`/backoff interval path remains covered. Cleanup uses only `sentinel_admin` and
-registered IDs.
+`delivering` row with admin, reclaimed it without sleep, and delivered it once. The fourth through
+sixth tests coordinate stale delivered/failed workers with events, reclaim the row, and assert
+that only the worker holding the claimed `attempts` value can change database state, including a
+stale failure after the replacement is already delivered. The existing typed `mark_failed`/backoff
+interval path remains covered. Cleanup uses only `sentinel_admin` and registered IDs.
 
 Before the fix, the complete group was red: `tests=3`, `failures=1`, while the two-worker test
 and mark-failed test passed. The sanitized receipt is in

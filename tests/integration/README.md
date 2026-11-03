@@ -116,7 +116,7 @@ RUN_INTEGRATION=1 uv run pytest -q tests/integration/test_runtime_role_privilege
 RUN_INTEGRATION=1 uv run pytest -q tests/integration/test_outbox_two_workers.py
 ```
 
-- The file contains five cases. The two-worker case inserts ten `pr2d.synthetic` events and
+- The file contains six cases. The two-worker case inserts ten `pr2d.synthetic` events and
   one non-target control row, starts two concurrent `run_once()` calls behind a barrier, and
   uses only a local test handler. Every target row must receive exactly one handler call,
   finish `delivered` with `attempts=1`, and the non-target row must remain unchanged.
@@ -124,14 +124,14 @@ RUN_INTEGRATION=1 uv run pytest -q tests/integration/test_outbox_two_workers.py
   into the past, calls `reclaim_stuck(age=...)` without sleeping, and then delivers the row
   exactly once through `run_once()`. The third case checks the existing `mark_failed()` and
   `backoff()` path: the explicit `CAST(:delay AS interval)` schedules a future retry. The fourth
-  and fifth cases pause worker A in a local test-only handler, reclaim the row, let worker B claim
-  `attempts=2`, and verify that stale delivered and failed completions from A do not change
-  database state; B then completes the row.
+  through sixth cases pause worker A in a local test-only handler, reclaim the row, let worker B
+  claim `attempts=2`, and verify stale delivered, stale failed, and stale failure after replacement
+  delivered completions from A do not change database state; B then completes the row.
 - Fixtures require PostgreSQL roles `sentinel_app` and `sentinel_admin` and fail when enabled
   configuration or services are missing. Runtime inserts only synthetic rows; cleanup uses
   only the admin connection and only the IDs registered by the current test. No payload, DSN,
   password, token, or row identifier is printed.
-- `staging_gate.sh` runs this file independently as `P1-REDIS-WORKERS` with a minimum of five
+- `staging_gate.sh` runs this file independently as `P1-REDIS-WORKERS` with a minimum of six
   cases. Its exact scope is: **claim/lease/reclaim semantics; two concurrent in-process workers;
   lease ownership enforced by attempts fencing (SEC-004: stale worker cannot mark delivered or
   failed); test-only handler; no production handler; DB state only; handlers must be idempotent**.
@@ -144,9 +144,9 @@ RUN_INTEGRATION=1 uv run pytest -q tests/integration/test_outbox_two_workers.py
 - A temporary external claim copy without the status predicate made the two-worker test fail
   by repeatedly claiming work. The copy and plugin were deleted after the negative control.
   The SEC-004 red receipt is `evidence/PR-SEC004-RED.md`. Before the fix, a stale worker changed
-  replacement lease state; after the fix the two new cases and the full five-case group are green
-  locally. An external temporary copy of the unfenced dispatch module makes both new cases red
-  again and is deleted after the control.
+  replacement lease state; after the fix the three fence cases and the full six-case group are
+  green locally. External temporary copies of the unfenced dispatch module make the relevant
+  fence cases red again and are deleted after the controls.
 
 The PR2-D/SEC-004 gate proves PostgreSQL primitive semantics and database-state fencing only. It
 does not prove provider delivery, HTTP behavior, or production readiness. Fencing does not undo an

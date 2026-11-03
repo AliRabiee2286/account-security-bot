@@ -50,11 +50,11 @@ async def run_once(handlers: dict[str, Handler]) -> bool:
         async with unit_of_work() as session:
             changed = await mark_failed(session, message.id, message.attempts, str(exc))
         if not changed:
-            log.info("outbox.fence_rejected", operation="mark_failed", changed=False)
+            log.warning("outbox.fence_rejected", operation="mark_failed", changed=False)
         return True
     else:
         async with unit_of_work() as session:
             changed = await mark_delivered(session, message.id, message.attempts)
         if not changed:
-            log.info("outbox.fence_rejected", operation="mark_delivered", changed=False)
+            log.warning("outbox.fence_rejected", operation="mark_delivered", changed=False)
         return True

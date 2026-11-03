@@ -237,8 +237,9 @@ integration، `RUN_INTEGRATION=1`، race/reclaim، restore و cleanup اضافه
 - این fencing فقط state دیتابیس را محافظت می‌کند؛ اثر خارجی‌ای که worker قدیمی قبلاً انجام داده
   برنمی‌گردد. بنابراین handlerهای provider واقعی باید idempotent باشند و کلید idempotency را از
   شناسهٔ پیام مشتق کنند.
-- شاهد این تصمیم فعلاً محلی است: تست‌های stale delivered/stale failed و گروه پنج‌تایی outbox سبز
-  شده‌اند و کنترل منفی با کپی بدون fence قرمز شده است؛ Linux CI برای SEC-004 pending است.
+- شاهد این تصمیم فعلاً محلی است: سه تست stale delivered، stale failed و stale failure after
+  replacement delivered و گروه شش‌تایی outbox سبز شده‌اند و کنترل‌های منفی با کپی بدون fence
+  قرمز شده‌اند؛ Linux CI برای SEC-004 pending است.
 
 ### P1-RESTORE — محدودهٔ restore در CI
 

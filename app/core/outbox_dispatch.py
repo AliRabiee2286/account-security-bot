@@ -64,7 +64,7 @@ async def mark_delivered(session: AsyncSession, message_id: UUID, attempts: int)
         text("""
       UPDATE core.outbox
          SET status = 'delivered', delivered_at = now(), delivering_at = NULL
-        WHERE id = :id AND status = 'delivering' AND attempts = :attempts
+       WHERE id = :id AND status = 'delivering' AND attempts = :attempts
     """),
         {"id": message_id, "attempts": attempts},
     )
@@ -78,9 +78,9 @@ async def mark_failed(session: AsyncSession, message_id: UUID, attempts: int, er
       UPDATE core.outbox
          SET status = :status,
              available_at = now() + CAST(:delay AS interval),
-              last_error = :error,
-              delivering_at = NULL
-        WHERE id = :id AND status = 'delivering' AND attempts = :attempts
+             last_error = :error,
+             delivering_at = NULL
+       WHERE id = :id AND status = 'delivering' AND attempts = :attempts
     """),
         {
             "id": message_id,

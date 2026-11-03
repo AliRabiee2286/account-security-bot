@@ -436,7 +436,7 @@ else
   exit "$race_status"
 fi
 echo '== outbox claim/lease/reclaim =='
-if run_pytest_group P1-REDIS-WORKERS 5 tests/integration/test_outbox_two_workers.py; then
+if run_pytest_group P1-REDIS-WORKERS 6 tests/integration/test_outbox_two_workers.py; then
   P1_REDIS_WORKERS_STATUS=PASS
   echo "P1-REDIS-WORKERS=PASS scope=$P1_REDIS_WORKERS_SCOPE"
 else

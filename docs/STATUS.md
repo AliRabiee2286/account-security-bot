@@ -40,7 +40,7 @@
 | X monitoring | `NOT_STARTED` | انتخاب X برای MVP ثبت شده، اما هزینه، دسترسی و حساب آزمایشی هنوز تأیید نشده‌اند. |
 | incident workflow | `PARTIAL` | report و idempotency وجود دارد؛ transition حساس و عملیات رسمی provider کامل نیست. |
 | scanning | `PARTIAL` | فاز اول متن‌محور تعریف شده؛ implementation فعلی محدود است و OCR خارج از MVP است. |
-| outbox/worker delivery | `VERIFIED_LOCALLY` | PR2-D روی PostgreSQL/Redis disposable سبز بود؛ SEC-004 اکنون با attempts fencing در دو مسیر delivered/failed، دو تست جدید و گروه پنج‌تایی روی PostgreSQL 16 disposable سبز است. handler production همچنان خالی و Linux CI برای SEC-004 pending است. |
+| outbox/worker delivery | `VERIFIED_LOCALLY` | PR2-D روی PostgreSQL/Redis disposable سبز بود؛ SEC-004 اکنون با attempts fencing در سه سناریوی stale delivered، stale failed و stale failure after replacement delivered، و گروه شش‌تایی روی PostgreSQL 16 disposable سبز است. handler production همچنان خالی و Linux CI برای SEC-004 pending است. |
 | rate limit/alerts/admin | `NOT_STARTED` | primitive یا placeholder وجود دارد، اما wiring و پنل عملیاتی کامل نیست. |
 | backup/restore evidence | `VERIFIED_IN_CI` | PR2-E در `main` با `1262177` ادغام شد؛ local و Linux CI با دو تست restore سبز شدند. بررسی restore شامل no forbidden privileges after restore (DELETE/TRUNCATE; audit UPDATE); allowed privileges not compared (TEST-005) است؛ review مستقل هنوز pending است. |
 
@@ -51,8 +51,9 @@
   این receipt را ثبت کرد: `P1-REDIS-WORKERS-XML tests=3 skipped=0 errors=0 failures=0` و
   `Result: PARTIAL — 3 gates BLOCKED/NOT_RUN`.
 - در branch `stg-001-sec004-fencing`، SEC-004 **اصلاح‌شده، شاهد محلی؛ CI لینوکسی pending** است.
-  دو تست stale delivered/stale failed و کل گروه outbox با `tests=5 skipped=0 errors=0 failures=0`
-  سبز شدند؛ کنترل منفی با کپی موقت بدون fence دوباره `tests=2 ... failures=2` شد.
+  سه سناریوی fence — stale delivered، stale failed و stale failure after replacement delivered —
+  و کل گروه outbox با `tests=6 skipped=0 errors=0 failures=0` سبز شدند؛ کنترل منفی با کپی موقت
+  بدون fence دوباره شکست خورد.
 - SEC-003 در Linux CI تأیید شد: catalog sweep همهٔ ۶ schema و ۲۱ جدول را پوشش داد، membership
   در `sentinel_app_role` و محدودیت attributeها را بررسی کرد و هیچ violationی نداشت. بسته‌شدن
   نهایی SEC-003 به review مستقل وابسته است؛ این receipt جای review را نمی‌گیرد.
@@ -80,7 +81,7 @@
   گروه outbox با JUnit مستقل `tests=3 skipped=0 errors=0 failures=0` بود.
 - پس از اصلاح SEC-004، `mark_delivered` و `mark_failed` هر دو با `status='delivering' AND
   attempts=:attempts` fence می‌شوند و نتیجهٔ rowcount را به‌صورت bool برمی‌گردانند. `run_once`
-  در رد fence خطا نمی‌دهد و فقط log sanitized می‌نویسد. گروه جدید پنج‌تایی و کنترل منفی خارجی
+  در رد fence خطا نمی‌دهد و فقط log sanitized می‌نویسد. گروه جدید شش‌تایی و کنترل منفی خارجی
   در `evidence/PR-SEC004-RED.md` ثبت شده‌اند؛ Linux CI هنوز pending است.
 - در اجرای فعلی پس از PR2-D، full offline suite برابر 77 passed/11 skipped بود؛ integrationها
   بدون `RUN_INTEGRATION=1` عمداً skip می‌شوند. Ruff، format، mypy، import-linter، validators،

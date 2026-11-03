@@ -213,7 +213,7 @@ run or independent reviewer approval. No push was performed.
 | Red SEC-004 tests before fix | PASS (expected failure) | `tests=2 skipped=0 errors=0 failures=2`; stale delivered and stale failed assertions both detected replacement-state changes |
 | Product fix | PASS | `mark_delivered` and `mark_failed` require `status='delivering' AND attempts=:attempts`, return whether one row changed, and make no schema/migration change |
 | SEC-004 focused tests after fix | PASS | `tests=2 skipped=0 errors=0 failures=0`; event-coordinated handlers, no guessed sleep |
-| Complete outbox group after fix | PASS | `tests=5 skipped=0 errors=0 failures=0` |
+| Complete outbox group after fix | PASS | `tests=6 skipped=0 errors=0 failures=0`; three fence scenarios: stale delivered, stale failed, stale failure after replacement delivered |
 | Unfenced negative control | PASS (expected failure) | External temporary copy of the unfenced dispatch module made both new tests fail: `tests=2 skipped=0 errors=0 failures=2`; copy/plugin/reports deleted |
 | Cleanup | PASS | Disposable PostgreSQL container removed with `docker rm -fv`; cleanup used admin and only registered test IDs |
 
