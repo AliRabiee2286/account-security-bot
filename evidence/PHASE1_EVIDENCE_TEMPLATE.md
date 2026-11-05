@@ -13,11 +13,11 @@ Offline/static PASS is informative and does not close Phase 1.
 | Gate | Command / test | Result | Evidence link | Reviewer |
 |---|---|---|---|---|
 | P1-DB | `alembic upgrade head` from empty DB | BLOCKED | | |
-| P1-REDIS-WORKERS | claim/lease/reclaim semantics; two concurrent in-process workers; lease ownership NOT enforced — stale-worker overwrite confirmed locally (SEC-004); test-only handler; no production handler | PASS (local + Linux CI; independent reviewer pending) | [PR2-D red reclaim receipt](PR2-D-RED-RECLAIM.md); [PR2-D Linux CI run](https://github.com/AliRabiee2286/account-security-bot/actions/runs/39551172150) | |
+| P1-REDIS-WORKERS | claim/lease/reclaim semantics; two concurrent in-process workers; lease ownership enforced by attempts fencing (SEC-004: stale worker cannot mark delivered or failed); test-only handler; no production handler; DB state only; handlers must be idempotent | PASS (local; Linux CI pending) | [SEC-004 red/green receipt](PR-SEC004-RED.md); [PR2-D Linux CI run](https://github.com/AliRabiee2286/account-security-bot/actions/runs/39551172150) | |
 | P1-CI | uv sync, ruff, mypy, import-linter, pytest | BLOCKED | | |
 | P1-RACE | 20 pairs + lock-wait overlap + replay/expiry; PostgreSQL; no HTTP | PASS (Linux CI; independent reviewer pending) | | |
 | P1-WEBHOOK | invalid secret 403, valid secret 200 | BLOCKED | | |
-| P1-RESTORE | logical PostgreSQL 16 `pg_dump --format=custom`/`pg_restore`; synthetic data; row count + md5 digest; head `0007`; dump cleanup | VERIFIED_LOCALLY | PR2-E local receipt below | |
+| P1-RESTORE | logical PostgreSQL 16 `pg_dump --format=custom`/`pg_restore`; synthetic data; row count + md5 digest; head `0007`; no forbidden privileges after restore (DELETE/TRUNCATE; audit UPDATE); allowed privileges not compared (TEST-005); dump cleanup | PASS (local + Linux CI; independent reviewer pending) | [PR2-E Linux CI run](https://github.com/AliRabiee2286/account-security-bot/actions/runs/40222607578); PR2-E local receipt below | |
 | P1-SECURITY | review S-011..S-022 applicable controls | BLOCKED | | |
 | P1-OFFLINE | lock, compile, unit, Ruff, mypy, import boundaries, offline smoke | PASS (workspace only) | | |
 
@@ -38,6 +38,7 @@ No production credentials or real employee data may be used for this run.
 | #4 | `46435a9` | **FAIL** | `P1-DB`: `alembic upgrade head` reached `migrations/versions/20261008_0001_foundation.py:27`; one `op.execute` contained multiple `CREATE TABLE`/`CREATE INDEX` commands and `asyncpg` rejected the prepared statement with `cannot insert multiple commands into a prepared statement`. | Settings load; PostgreSQL connection; admin role; runtime app-role creation; preceding lock/quality/unit/validator/smoke stages recorded by CI. | Runtime role-separation probe; `RUN_INTEGRATION=1`; synthetic webhook guard; later gate summaries. | User-provided GitHub Actions log; run URL not supplied. Reviewer 1: project owner. Reviewer 2: independent review pending. `P1-WEBHOOK-DELIVERY` remains `BLOCKED`; no real Telegram contact was attempted. |
 | #5 | `a20c620` | **PARTIAL** | Result: `PARTIAL — 5 gates BLOCKED/NOT_RUN`; every executable gate completed successfully. | `P1-LOCK=PASS`; `P1-SERVICE-HEALTH=PASS`; `P1-OFFLINE=PASS`; `P1-DB=PASS` (`head=0007`); `P1-ROLE=PASS` (`audit.audit_events` DELETE only); `P1-INTEGRATION=PASS` (env-presence only); `P1-WEBHOOK-GUARD=PASS` (function-level). | `P1-SECURITY=BLOCKED`; `P1-WEBHOOK-DELIVERY=BLOCKED`; `P1-RACE=BLOCKED`; `P1-REDIS-WORKERS=BLOCKED`; `P1-RESTORE=BLOCKED`. | [Run #5](https://github.com/AliRabiee2286/account-security-bot/actions/runs/39013722100); disposable PostgreSQL 16 evidence; CI admin role was superuser, so non-superuser migration evidence remains open. Reviewer 1: project owner. Reviewer 2: independent review pending. |
 | `39551172150` | `9466b0a` | **PARTIAL** | `P1-REDIS-WORKERS-XML tests=3 skipped=0 errors=0 failures=0`; `Result: PARTIAL — 3 gates BLOCKED/NOT_RUN`. | `P1-REDIS-WORKERS=PASS` for the merged PR2-D outbox gate. | `P1-SECURITY`, `P1-WEBHOOK-DELIVERY`, and `P1-RESTORE` remain BLOCKED/NOT_RUN. | [PR2-D Linux CI run](https://github.com/AliRabiee2286/account-security-bot/actions/runs/39551172150); Reviewer 1: project owner. Reviewer 2: independent review pending. |
+| `40222607578` | `1262177` | **PARTIAL** | `P1-RESTORE-XML tests=2 skipped=0 errors=0 failures=0`; `P1-RESTORE=PASS`; `Result: PARTIAL — 2 gates BLOCKED/NOT_RUN`. | `P1-RESTORE=PASS`; no forbidden privileges after restore (DELETE/TRUNCATE; audit UPDATE); allowed privileges not compared (TEST-005). | `P1-SECURITY` and `P1-WEBHOOK-DELIVERY` remain BLOCKED/NOT_RUN. | [PR2-E Linux CI run](https://github.com/AliRabiee2286/account-security-bot/actions/runs/40222607578); Reviewer 1: project owner. Reviewer 2: independent review pending. |
 
 ## PR2-A local rehearsal — not a GitHub CI run
 
@@ -198,8 +199,27 @@ not a GitHub Actions run or independent reviewer approval. No push was performed
 The exact red receipt is in `evidence/PR2-D-RED-RECLAIM.md`. The outbox gate scope is
 **claim/lease/reclaim semantics; two concurrent in-process workers; lease ownership NOT enforced
 — stale-worker overwrite confirmed locally (SEC-004); test-only handler; no production handler**.
-`P1-RESTORE` remains BLOCKED, and
-Linux CI/independent review for PR2-D are still pending.
+`P1-RESTORE` remained BLOCKED in the PR2-D receipt; PR2-D Linux CI is recorded above, while
+independent review for PR2-D and Linux CI for SEC-004 remain pending.
+
+## SEC-004 local verification — 2026-10-25, Asia/Tehran
+
+Branch: `stg-001-sec004-fencing`, based on merged PR2-E `1262177`. The product fix is commit
+`f8c8d1d`; the gate scope update is `9d5cbde`. These are local Docker results, not a GitHub Actions
+run or independent reviewer approval. No push was performed.
+
+| Local check | Result | Counts / scope |
+|---|---|---|
+| Red SEC-004 tests before fix | PASS (expected failure) | `tests=2 skipped=0 errors=0 failures=2`; stale delivered and stale failed assertions both detected replacement-state changes |
+| Product fix | PASS | `mark_delivered` and `mark_failed` require `status='delivering' AND attempts=:attempts`, return whether one row changed, and make no schema/migration change |
+| SEC-004 focused tests after fix | PASS | `tests=2 skipped=0 errors=0 failures=0`; event-coordinated handlers, no guessed sleep |
+| Complete outbox group after fix | PASS | `tests=6 skipped=0 errors=0 failures=0`; three fence scenarios: stale delivered, stale failed, stale failure after replacement delivered |
+| Unfenced negative control | PASS (expected failure) | External temporary copy of the unfenced dispatch module made both new tests fail: `tests=2 skipped=0 errors=0 failures=2`; copy/plugin/reports deleted |
+| Cleanup | PASS | Disposable PostgreSQL container removed with `docker rm -fv`; cleanup used admin and only registered test IDs |
+
+The exact sanitized receipt is `evidence/PR-SEC004-RED.md`. Fencing protects database state only;
+an external effect already performed by an old worker is not undone. Real provider handlers must
+be idempotent with a key derived from the message identifier. Linux CI for SEC-004 is pending.
 
 ## PR2-E local verification — 2026-10-25, Asia/Tehran
 
@@ -211,7 +231,7 @@ GitHub Actions run or independent reviewer approval. No push was performed. `app
 | Local check | Result | Counts / scope |
 |---|---|---|
 | Independent restore group | PASS | PostgreSQL 16 disposable container; `tests=2 skipped=0 errors=0 failures=0`; source/target table sets, row counts and md5 digests matched; migration head `0007` matched |
-| Restore privilege and trigger checks | PASS | Target catalog had no runtime DELETE/TRUNCATE or audit UPDATE violations; `trg_audit_no_update` and `trg_audit_no_truncate` were present |
+| Restore privilege and trigger checks | PASS | No forbidden privileges after restore (DELETE/TRUNCATE; audit UPDATE); allowed privileges not compared (TEST-005); `trg_audit_no_update` and `trg_audit_no_truncate` were present |
 | Corrupt-dump control | PASS | Truncating the in-container custom dump made `pg_restore` return non-zero and the target database was dropped afterward |
 | Full local staging gate | PASS | `P1-RESTORE-DIAGNOSTIC=pytest_exit=0 xml_exit=0`; `P1-RESTORE=PASS`; `STAGING_GATE_STATUS=0` |
 | Digest negative control | PASS (expected mismatch) | Changing one restored `identity.departments` row kept the count equal and changed the md5 digest |
@@ -226,6 +246,7 @@ same disposable database, violating the restore precondition. The focused fix wa
 offline step with `RUN_INTEGRATION=0` while keeping each later integration group explicitly
 enabled. The rerun passed without changing application code or migrations.
 
-This local receipt does not claim encrypted backup, PITR, production backup readiness, Linux CI
-evidence, or independent review. The three negative-control harnesses and any dump files were
-kept outside the repository and removed after the run.
+This receipt does not claim encrypted backup, PITR, production backup readiness, or independent
+review. The three negative-control harnesses and any dump files were kept outside the repository
+and removed after the run. Linux CI receipt: `P1-RESTORE-XML tests=2 skipped=0 errors=0 failures=0`,
+`P1-RESTORE=PASS`, `Result: PARTIAL — 2 gates BLOCKED/NOT_RUN`.

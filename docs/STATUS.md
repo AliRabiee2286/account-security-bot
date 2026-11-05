@@ -1,7 +1,7 @@
 # وضعیت canonical پروژه
 
 **آخرین بازبینی:** ۲۵ اکتبر ۲۰۲۶، منطقه زمانی تهران؛ baseline در ۱۴ اکتبر پذیرفته شد
-**دامنه این به‌روزرسانی:** ثبت پیاده‌سازی و receipt محلی PR2-E؛ بدون تغییر app یا migration
+**دامنه این به‌روزرسانی:** ثبت ادغام PR2-E و receipt لینوکس CI؛ بدون تغییر app یا migration
 
 این فایل تنها مرجع وضعیت جاری و تنها محل ثبت «قدم بعدی» رسمی است. وضعیت‌ها و قدم‌های
 قبلی در `task_plan.md`، `findings.md`، `progress.md` و Second Brain به‌عنوان تاریخچه
@@ -30,7 +30,7 @@
 | CI workflow syntax | `VERIFIED` | run #5 با commit `a20c620` در GitHub Actions کامل اجرا شد؛ workflow در PR2-B تغییر نکرد. |
 | migration chain روی DB خالی | `VERIFIED` | `alembic upgrade head` روی PostgreSQL 16 disposable موفق شد و `current=heads=0007` ثبت شد؛ محدودیت: نقش admin در CI، superuser بود و اثبات با admin غیر-superuser انجام نشده است. |
 | runtime role privilege probe | `VERIFIED_IN_CI` | PR2-C در `main` با `57d7a85` ادغام شد؛ Linux CI روی `554335d`، run `39386598021`: چهار DELETE با `42501` رد شدند و catalog شامل ۲۱ جدول در ۶ schema با صفر violation بود؛ بسته‌شدن نهایی SEC-003 به review مستقل وابسته است. |
-| PostgreSQL/Redis و CI runtime | `PARTIAL` | PR2-A تا PR2-D در `main` ادغام شده‌اند؛ PR2-D با `9466b0a` و Linux CI run `39551172150`، گروه outbox را با صفر skip/error/failure سبز کرد؛ reviewer مستقل همچنان pending است. |
+| PostgreSQL/Redis و CI runtime | `PARTIAL` | PR2-A تا PR2-D در `main` ادغام شده‌اند؛ PR2-D با `9466b0a` و Linux CI run `39551172150` سبز شد. SEC-004 در این branch اصلاح‌شده و شاهد محلی دارد؛ Linux CI برای اصلاح pending است. |
 | Telegram Mini App proof | `IMPLEMENTED_NOT_VERIFIED` | validator و route ثبت‌نام وجود دارد؛ deploy و smoke واقعی نداریم. |
 | registration/approval | `PARTIAL` | ثبت pending و اسکلت approval وجود دارد؛ زنجیره کامل session و MFA اثبات نشده است. |
 | session/auth resolver | `PARTIAL` | resolver و hash DB-backed وجود دارند؛ همه routeهای حساس هنوز به جریان نهایی وصل نیستند. |
@@ -40,9 +40,9 @@
 | X monitoring | `NOT_STARTED` | انتخاب X برای MVP ثبت شده، اما هزینه، دسترسی و حساب آزمایشی هنوز تأیید نشده‌اند. |
 | incident workflow | `PARTIAL` | report و idempotency وجود دارد؛ transition حساس و عملیات رسمی provider کامل نیست. |
 | scanning | `PARTIAL` | فاز اول متن‌محور تعریف شده؛ implementation فعلی محدود است و OCR خارج از MVP است. |
-| outbox/worker delivery | `VERIFIED_LOCALLY` | PR2-D روی PostgreSQL/Redis disposable: دو worker، ده event synthetic، reclaim و mark-failed هر سه case سبز؛ handler production همچنان خالی و SEC-004 باز است. |
+| outbox/worker delivery | `VERIFIED_LOCALLY` | PR2-D روی PostgreSQL/Redis disposable سبز بود؛ SEC-004 اکنون با attempts fencing در سه سناریوی stale delivered، stale failed و stale failure after replacement delivered، و گروه شش‌تایی روی PostgreSQL 16 disposable سبز است. handler production همچنان خالی و Linux CI برای SEC-004 pending است. |
 | rate limit/alerts/admin | `NOT_STARTED` | primitive یا placeholder وجود دارد، اما wiring و پنل عملیاتی کامل نیست. |
-| backup/restore evidence | `VERIFIED_LOCALLY` | PR2-E روی PostgreSQL 16 disposable با `pg_dump --format=custom`/`pg_restore`، دو تست restore، و سه کنترل منفی محلی سبز شد؛ Linux CI و review مستقل هنوز ثبت نشده‌اند. |
+| backup/restore evidence | `VERIFIED_IN_CI` | PR2-E در `main` با `1262177` ادغام شد؛ local و Linux CI با دو تست restore سبز شدند. بررسی restore شامل no forbidden privileges after restore (DELETE/TRUNCATE; audit UPDATE); allowed privileges not compared (TEST-005) است؛ review مستقل هنوز pending است. |
 
 ## وضعیت فازها
 
@@ -50,6 +50,10 @@
   است و [Linux CI run `39551172150`](https://github.com/AliRabiee2286/account-security-bot/actions/runs/39551172150)
   این receipt را ثبت کرد: `P1-REDIS-WORKERS-XML tests=3 skipped=0 errors=0 failures=0` و
   `Result: PARTIAL — 3 gates BLOCKED/NOT_RUN`.
+- در branch `stg-001-sec004-fencing`، SEC-004 **اصلاح‌شده، شاهد محلی؛ CI لینوکسی pending** است.
+  سه سناریوی fence — stale delivered، stale failed و stale failure after replacement delivered —
+  و کل گروه outbox با `tests=6 skipped=0 errors=0 failures=0` سبز شدند؛ کنترل منفی با کپی موقت
+  بدون fence دوباره شکست خورد.
 - SEC-003 در Linux CI تأیید شد: catalog sweep همهٔ ۶ schema و ۲۱ جدول را پوشش داد، membership
   در `sentinel_app_role` و محدودیت attributeها را بررسی کرد و هیچ violationی نداشت. بسته‌شدن
   نهایی SEC-003 به review مستقل وابسته است؛ این receipt جای review را نمی‌گیرد.
@@ -61,8 +65,9 @@
 - بعد از fix، `P1-REDIS-WORKERS-XML tests=3 skipped=0 errors=0 failures=0` و
   `P1-REDIS-WORKERS=PASS` ثبت شد. Scope دقیق: **claim/lease/reclaim semantics; two concurrent
   in-process workers; lease ownership NOT enforced — stale-worker overwrite confirmed locally
-  (SEC-004); test-only handler; no production handler**. SEC-004 همچنان مانع provider واقعی است.
-- آزمایش SEC-004 نتیجهٔ **YES** داد: worker قدیمی، پس از reclaim و گرفتن lease توسط worker
+  (SEC-004); test-only handler; no production handler**. این scope مربوط به receipt تاریخی PR2-D
+  پیش از اصلاح SEC-004 است.
+- آزمایش SEC-004 پیش از اصلاح نتیجهٔ **YES** داد: worker قدیمی، پس از reclaim و گرفتن lease توسط worker
   جدید، می‌تواند `mark_delivered` را اجرا کند و row را پیش از پایان worker جدید به `delivered`
   ببرد. این رفتار فقط گزارش شد و در PR2-D اصلاح نشد.
 - در هر اجرای تست race، 20 فرم تازه با دو connection واقعی runtime و barrier مصرف شدند:
@@ -74,12 +79,16 @@
 - gate کامل محلی پس از PR2-D، `P1-INTEGRATION=PASS`، `P1-RACE=PASS` و
   `P1-REDIS-WORKERS=PASS` داشت؛ SECURITY، WEBHOOK-DELIVERY و RESTORE همچنان BLOCKED هستند.
   گروه outbox با JUnit مستقل `tests=3 skipped=0 errors=0 failures=0` بود.
+- پس از اصلاح SEC-004، `mark_delivered` و `mark_failed` هر دو با `status='delivering' AND
+  attempts=:attempts` fence می‌شوند و نتیجهٔ rowcount را به‌صورت bool برمی‌گردانند. `run_once`
+  در رد fence خطا نمی‌دهد و فقط log sanitized می‌نویسد. گروه جدید شش‌تایی و کنترل منفی خارجی
+  در `evidence/PR-SEC004-RED.md` ثبت شده‌اند؛ Linux CI هنوز pending است.
 - در اجرای فعلی پس از PR2-D، full offline suite برابر 77 passed/11 skipped بود؛ integrationها
   بدون `RUN_INTEGRATION=1` عمداً skip می‌شوند. Ruff، format، mypy، import-linter، validators،
   offline smoke، import smoke، shell syntax و diff check نیز موفق شدند. جزئیات در evidence
   ثبت شده‌اند.
-  reviewer مستقل PR2-B همچنان pending است؛ `SEC-004` نیز مانع باز باقی می‌ماند.
-- PR2-E در شاخهٔ `stg-001-pr2e-restore` با commit `e3e03d7` پیاده‌سازی شد. تست مستقل
+  reviewer مستقل PR2-B همچنان pending است؛ handlerهای provider واقعی باید idempotent باشند.
+- PR2-E با implementation commit `e3e03d7` و merge commit `1262177` در `main` ادغام شد. تست مستقل
   `tests/integration/test_restore_roundtrip.py` دو case دارد: round-trip کامل و corrupt-dump؛
   هر دو با PostgreSQL 16 disposable برابر `tests=2 skipped=0 errors=0 failures=0` سبز شدند.
   مقایسهٔ table-set، row count، md5 digest، head=`0007`، privilege و triggerهای audit انجام
@@ -88,10 +97,14 @@
   restore یک ردیف audit synthetic در همان DB گذاشت و precondition append-only restore را نقض
   کرد (`error_type=non-empty-audit`). gate اصلاح شد تا suiteٔ offline را با `RUN_INTEGRATION=0`
   اجرا کند و گروه‌های integration را جداگانه opt-in کند؛ اجرای بعدی با
-  `P1-RESTORE-DIAGNOSTIC=pytest_exit=0 xml_exit=0` و `STAGING_GATE_STATUS=0` سبز شد.
+  `P1-RESTORE-DIAGNOSTIC=pytest_exit=0 xml_exit=0` و `STAGING_GATE_STATUS=0` سبز شد. Linux CI نیز
+  `P1-RESTORE-XML tests=2 skipped=0 errors=0 failures=0`، `P1-RESTORE=PASS` و
+  `Result: PARTIAL — 2 gates BLOCKED/NOT_RUN` را ثبت کرد.
 - سه کنترل منفی محلی PR2-E نیز PASS شدند: تغییر یک ردیف با count برابر digest را نابرابر کرد،
   حذف یک ردیف count را نابرابر کرد، و اعطای موقت `DELETE` به `sentinel_app_role` violation را
-  آشکار و سپس revoke کرد. این کنترل‌ها بیرون repository اجرا شدند و artifact/dump یا secretی
+  آشکار و سپس revoke کرد؛ بررسی restore فقط no forbidden privileges after restore
+  (DELETE/TRUNCATE; audit UPDATE) را پوشش می‌دهد و allowed privileges not compared (TEST-005).
+  این کنترل‌ها بیرون repository اجرا شدند و artifact/dump یا secretی
   نگه‌داری نشد.
 - **Phase 2: `BLOCKED`** — WebAuthn واقعی، session issuance بعد از approval/MFA و Mini App
   deploy/integration هنوز انجام نشده‌اند.
@@ -99,16 +112,19 @@
 
 ## تنها قدم بعدی رسمی
 
-**`PR2-E — ثبت receipt و review برای restore با pg_dump/pg_restore`**
+**`PR2-F — مقایسهٔ relacl/nspacl و اثبات migration/admin غیر-superuser`**
 
 PR2-D در `main` با `9466b0a` ادغام شده و [Linux CI آن](https://github.com/AliRabiee2286/account-security-bot/actions/runs/39551172150)
 این receipt را ثبت کرده است: `P1-REDIS-WORKERS-XML tests=3 skipped=0 errors=0 failures=0` و
 `Result: PARTIAL — 3 gates BLOCKED/NOT_RUN`. Reviewer مستقل PR2-D و SEC-003 همچنان pending
-هستند؛ مسیر reclaim در PR2-D اصلاح شد، migration/schema تغییر نکردند، و SEC-004 برای provider
-واقعی باز مانده است. مسیر reclaim روی PostgreSQL واقعی هیچ‌وقت کار نمی‌کرد و در PR2-D کشف و
-اصلاح شد؛ `app/` فقط در commit `f4527e7` تغییر کرد، migration/schema تغییر نکردند، و SEC-004
-برای provider واقعی باز مانده است. PR2-E در `e3e03d7` آمادهٔ review است؛ قدم بعدی ثبت CI
-Linux receipt و سپس review مستقل است. تا آن زمان Phase 1 همچنان `PARTIAL` می‌ماند.
+هستند؛ مسیر reclaim در PR2-D اصلاح شد، migration/schema تغییر نکردند. مسیر reclaim روی PostgreSQL واقعی هیچ‌وقت کار نمی‌کرد و در PR2-D کشف و
+اصلاح شد؛ `app/` فقط در commit `f4527e7` تغییر کرد، migration/schema تغییر نکردند. SEC-004 در
+این branch اصلاح‌شده و شاهد محلی دارد، اما Linux CI برای آن pending است. PR2-E در `main` با
+`1262177` ادغام شده و [Linux CI run `40222607578`](https://github.com/AliRabiee2286/account-security-bot/actions/runs/40222607578)
+این receipt را ثبت کرده است: `P1-RESTORE-XML tests=2 skipped=0 errors=0 failures=0`,
+`P1-RESTORE=PASS` و `Result: PARTIAL — 2 gates BLOCKED/NOT_RUN`. بررسی مستقل هنوز pending
+است؛ review مستقل PR2-E هنوز pending است و قدم بعدی رسمی PR2-F است. تا بسته‌شدن سایر gateها
+Phase 1 همچنان `PARTIAL` می‌ماند.
 
 ## ممنوعیت‌های این baseline
 

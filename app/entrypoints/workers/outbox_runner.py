@@ -14,10 +14,12 @@ from sqlalchemy import text
 from sqlalchemy.engine import CursorResult
 
 from app.core.db import unit_of_work
+from app.core.logging import get_logger
 from app.core.outbox_dispatch import ClaimedMessage, claim_one, mark_delivered, mark_failed
 from app.core.request_context import set_request_id
 
 Handler = Callable[[ClaimedMessage], Awaitable[None]]
+log = get_logger(__name__)
 
 
 async def reclaim_stuck(*, age: timedelta = timedelta(minutes=10)) -> int:
@@ -46,9 +48,13 @@ async def run_once(handlers: dict[str, Handler]) -> bool:
         await handler(message)
     except Exception as exc:
         async with unit_of_work() as session:
-            await mark_failed(session, message.id, message.attempts, str(exc))
+            changed = await mark_failed(session, message.id, message.attempts, str(exc))
+        if not changed:
+            log.warning("outbox.fence_rejected", operation="mark_failed", changed=False)
         return True
     else:
         async with unit_of_work() as session:
-            await mark_delivered(session, message.id)
+            changed = await mark_delivered(session, message.id, message.attempts)
+        if not changed:
+            log.warning("outbox.fence_rejected", operation="mark_delivered", changed=False)
         return True

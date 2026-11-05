@@ -7,10 +7,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import timedelta
-from typing import Any, Protocol
+from typing import Any, Protocol, cast
 from uuid import UUID
 
 from sqlalchemy import text
+from sqlalchemy.engine import CursorResult
 from sqlalchemy.ext.asyncio import AsyncSession
 
 MAX_ATTEMPTS = 5
@@ -58,27 +59,35 @@ async def claim_one(session: AsyncSession) -> ClaimedMessage | None:
     )
 
 
-async def mark_delivered(session: AsyncSession, message_id: UUID) -> None:
-    await session.execute(
+async def mark_delivered(session: AsyncSession, message_id: UUID, attempts: int) -> bool:
+    result = await session.execute(
         text("""
       UPDATE core.outbox
          SET status = 'delivered', delivered_at = now(), delivering_at = NULL
-       WHERE id = :id AND status = 'delivering'
+       WHERE id = :id AND status = 'delivering' AND attempts = :attempts
     """),
-        {"id": message_id},
+        {"id": message_id, "attempts": attempts},
     )
+    return cast(CursorResult[Any], result).rowcount == 1
 
 
-async def mark_failed(session: AsyncSession, message_id: UUID, attempts: int, error: str) -> None:
+async def mark_failed(session: AsyncSession, message_id: UUID, attempts: int, error: str) -> bool:
     status = "dead" if attempts >= MAX_ATTEMPTS else "pending"
-    await session.execute(
+    result = await session.execute(
         text("""
       UPDATE core.outbox
          SET status = :status,
              available_at = now() + CAST(:delay AS interval),
              last_error = :error,
              delivering_at = NULL
-       WHERE id = :id
+       WHERE id = :id AND status = 'delivering' AND attempts = :attempts
     """),
-        {"id": message_id, "status": status, "delay": backoff(attempts), "error": error[:500]},
+        {
+            "id": message_id,
+            "attempts": attempts,
+            "status": status,
+            "delay": backoff(attempts),
+            "error": error[:500],
+        },
     )
+    return cast(CursorResult[Any], result).rowcount == 1

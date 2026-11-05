@@ -116,22 +116,26 @@ RUN_INTEGRATION=1 uv run pytest -q tests/integration/test_runtime_role_privilege
 RUN_INTEGRATION=1 uv run pytest -q tests/integration/test_outbox_two_workers.py
 ```
 
-- The file contains three cases. The two-worker case inserts ten `pr2d.synthetic` events and
+- The file contains six cases. The two-worker case inserts ten `pr2d.synthetic` events and
   one non-target control row, starts two concurrent `run_once()` calls behind a barrier, and
   uses only a local test handler. Every target row must receive exactly one handler call,
   finish `delivered` with `attempts=1`, and the non-target row must remain unchanged.
 - The reclaim case inserts a `delivering` row, uses `sentinel_admin` to move `delivering_at`
   into the past, calls `reclaim_stuck(age=...)` without sleeping, and then delivers the row
   exactly once through `run_once()`. The third case checks the existing `mark_failed()` and
-  `backoff()` path: the explicit `CAST(:delay AS interval)` schedules a future retry.
+  `backoff()` path: the explicit `CAST(:delay AS interval)` schedules a future retry. The fourth
+  through sixth cases pause worker A in a local test-only handler, reclaim the row, let worker B
+  claim `attempts=2`, and verify stale delivered, stale failed, and stale failure after replacement
+  delivered completions from A do not change database state; B then completes the row.
 - Fixtures require PostgreSQL roles `sentinel_app` and `sentinel_admin` and fail when enabled
   configuration or services are missing. Runtime inserts only synthetic rows; cleanup uses
   only the admin connection and only the IDs registered by the current test. No payload, DSN,
   password, token, or row identifier is printed.
-- `staging_gate.sh` runs this file independently as `P1-REDIS-WORKERS` with a minimum of three
+- `staging_gate.sh` runs this file independently as `P1-REDIS-WORKERS` with a minimum of six
   cases. Its exact scope is: **claim/lease/reclaim semantics; two concurrent in-process workers;
-  lease ownership NOT enforced — stale-worker overwrite confirmed locally (SEC-004); test-only
-  handler; no production handler**. In the PR2-D receipt, `P1-RESTORE` was still BLOCKED.
+  lease ownership enforced by attempts fencing (SEC-004: stale worker cannot mark delivered or
+  failed); test-only handler; no production handler; DB state only; handlers must be idempotent**.
+  In the PR2-D receipt, `P1-RESTORE` was still BLOCKED.
 - Before the fix, the group produced `tests=3 skipped=0 errors=0 failures=1`: the two-worker
   case and mark-failed case passed, while reclaim failed with
   `asyncpg.exceptions.UndefinedFunctionError` because `now() - :age` was untyped. The
@@ -139,11 +143,15 @@ RUN_INTEGRATION=1 uv run pytest -q tests/integration/test_outbox_two_workers.py
   `app/entrypoints/workers/outbox_runner.py`.
 - A temporary external claim copy without the status predicate made the two-worker test fail
   by repeatedly claiming work. The copy and plugin were deleted after the negative control.
-  A separate SEC-004 experiment confirmed that a stale worker can mark a replacement lease as
-  `delivered`; ownership remains outside this gate and is not silently fixed here.
+  The SEC-004 red receipt is `evidence/PR-SEC004-RED.md`. Before the fix, a stale worker changed
+  replacement lease state; after the fix the three fence cases and the full six-case group are
+  green locally. External temporary copies of the unfenced dispatch module make the relevant
+  fence cases red again and are deleted after the controls.
 
-The PR2-D gate proves PostgreSQL primitive semantics only. It does not prove provider delivery,
-idempotent production handlers, lease ownership, HTTP behavior, or production readiness.
+The PR2-D/SEC-004 gate proves PostgreSQL primitive semantics and database-state fencing only. It
+does not prove provider delivery, HTTP behavior, or production readiness. Fencing does not undo an
+external effect already performed by a stale worker; real provider handlers must be idempotent with
+a key derived from the message identifier. Linux CI for SEC-004 is pending.
 
 ## PR2-E: logical PostgreSQL restore round trip
 
@@ -164,17 +172,22 @@ RUN_INTEGRATION=1 uv run pytest -q \
   remove it during cleanup. No `--no-owner` or `--no-acl` flags are used. Subprocesses are bounded
   and raw output is not emitted.
 - The positive case compares the source and target table sets, every table's row count and md5
-  digest, migration head `0007`, effective runtime privileges, and the two audit trigger names.
+  digest, migration head `0007`, no forbidden privileges after restore (DELETE/TRUNCATE; audit
+  UPDATE); allowed privileges not compared (TEST-005), and the two audit trigger names.
   The corrupt-dump case requires non-zero `pg_restore` and verifies that its target database is
   dropped.
 - `staging_gate.sh` runs this file independently as `P1-RESTORE` with a minimum of two cases.
   Its offline suite explicitly sets `RUN_INTEGRATION=0`; later integration groups opt in with
   `RUN_INTEGRATION=1`. This prevents an earlier integration test from leaving an audit row that
   would invalidate the restore precondition.
-- Local PR2-E receipt: `tests=2 skipped=0 errors=0 failures=0`, `P1-RESTORE=PASS`, and gate
-  exit `0`. Separate disposable controls detected an md5 mismatch after a row update, a count
-  mismatch after a row deletion, and a temporary `DELETE` privilege violation, then restored the
-  database state. This is local evidence only; Linux CI and independent review remain pending.
+- PR2-E is merged into `main` at `1262177`. The local receipt and Linux CI run
+  [40222607578](https://github.com/AliRabiee2286/account-security-bot/actions/runs/40222607578)
+  both report `tests=2 skipped=0 errors=0 failures=0` and `P1-RESTORE=PASS`; CI overall is
+  `Result: PARTIAL — 2 gates BLOCKED/NOT_RUN`. Separate disposable controls detected an md5
+  mismatch after a row update, a count mismatch after a row deletion, and a temporary forbidden
+  `DELETE` privilege, then restored the database state. The privilege scope is no forbidden
+  privileges after restore (DELETE/TRUNCATE; audit UPDATE); allowed privileges not compared
+  (TEST-005). Independent review remains pending.
 
 Required later cases: rollback on failed audit write; HTTP webhook valid/invalid; encrypted
 credential cannot be read as plaintext; encrypted/PITR production backup evidence. See
